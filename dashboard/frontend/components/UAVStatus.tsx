@@ -42,10 +42,10 @@ export default function UAVStatusPanel({ statuses }: Props) {
 
 function ConnectivityIcon({ status }: { status: UAVStatus["connectivity"] }) {
   if (status === "connected")
-    return <Wifi size={16} className="text-green-400" title="4G/LTE" />;
+    return <Wifi size={16} className="text-green-400" />;
   if (status === "lora")
-    return <Radio size={16} className="text-yellow-400" title="LoRa fallback" />;
-  return <WifiOff size={16} className="text-red-400" title="Disconnected" />;
+    return <Radio size={16} className="text-yellow-400" />;
+  return <WifiOff size={16} className="text-red-400" />;
 }
 
 function BatteryIndicator({ pct }: { pct: number }) {
