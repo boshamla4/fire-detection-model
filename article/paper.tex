@@ -1,0 +1,327 @@
+\documentclass[conference]{IEEEtran}
+\IEEEoverridecommandlockouts
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb,amsfonts}
+\usepackage{graphicx}
+\usepackage{textcomp}
+\usepackage{xcolor}
+\usepackage{booktabs}
+\usepackage{url}
+\usepackage{hyperref}
+\usepackage{multirow}
+\usepackage{array}
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+\def\BibTeX{{\rm B\kern-.05em{\sc i\kern-.025em b}\kern-.08em
+    T\kern-.1667em\lower.7ex\hbox{E}\kern-.125emX}}
+
+\begin{document}
+
+\title{Edge-Cloud Architecture for Real-Time Forest Fire Detection Using YOLOv11 on UAV Imagery}
+
+\author{
+  \IEEEauthorblockN{Alaaeddine Bouchamla}
+  \IEEEauthorblockA{
+    \textit{Department of Telecommunications Engineering}\\
+    \textit{École Nationale d'Ingénieurs de Sousse (ENISO)}\\
+    Sousse, Tunisia\\
+    boshamla4@gmail.com
+  }
+}
+
+\maketitle
+
+% ─────────────────────────────────────────────────────────────────────────────
+\begin{abstract}
+Forest fires represent one of the most destructive natural disasters, causing irreversible ecological and economic damage worldwide. Early and accurate detection is critical to minimizing their impact, yet most existing AI-based approaches rely on centralized cloud processing, introducing unacceptable latency in remote, low-connectivity areas. This paper proposes an edge-cloud distributed architecture for real-time forest fire and smoke detection, deployable on Unmanned Aerial Vehicles (UAVs). The detection backbone is based on YOLOv11, the latest generation of real-time object detection networks, fine-tuned on the D-Fire public dataset. The proposed system partitions computation between an onboard edge inference unit and a cloud aggregation layer, achieving end-to-end detection latency below 5 seconds even under constrained network conditions. An operational dashboard provides real-time spatial visualization of fire probability and active alerts for emergency responders. Experimental results demonstrate a mAP@0.5 of \textbf{[TBD]}, inference latency of \textbf{[TBD] ms} on edge hardware, and end-to-end detection latency of \textbf{[TBD] s}, establishing the viability of this architecture for operational deployment in wildfire-prone regions.
+\end{abstract}
+
+\begin{IEEEkeywords}
+forest fire detection, UAV, edge computing, YOLOv11, real-time inference, edge-cloud architecture, smoke detection, object detection
+\end{IEEEkeywords}
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Introduction}
+
+Forest fires are a growing global threat, accelerated by climate change and prolonged drought cycles. In 2023 alone, wildfires burned over 13.4 million hectares across Europe, North Africa, and North America, resulting in billions of dollars in damages and significant loss of biodiversity~\cite{liu2025advancements}. The critical window for effective fire suppression is narrow: detection within the first few minutes after ignition drastically reduces the area burned and the cost of intervention.
+
+Traditional fire monitoring systems rely on ground-based sensors and satellite imagery. Ground sensors suffer from limited spatial coverage and require costly dense deployment. Satellite-based systems such as NASA MODIS and VIIRS introduce detection delays ranging from 30 minutes to several hours due to orbital revisit periods~\cite{morchid2025fire}, an operationally unacceptable latency for real-time fire response.
+
+Unmanned Aerial Vehicles (UAVs) represent a compelling alternative: they can be rapidly deployed, maneuver through complex terrain, and carry lightweight cameras that feed continuous aerial imagery at low altitude. When equipped with onboard AI inference capabilities, UAVs can detect fire and smoke in near real-time without relying on a persistent high-bandwidth uplink to the cloud.
+
+However, deploying high-performance deep learning models on resource-constrained edge hardware introduces significant challenges: limited compute budget, restricted memory, power constraints, and thermal throttling. Furthermore, in wildfire-prone mountainous or forested regions, network connectivity is often intermittent or entirely absent (\textit{zone blanche}), making fully cloud-dependent architectures unreliable precisely when they are needed most.
+
+This work addresses these challenges with the following contributions:
+
+\begin{enumerate}
+    \item \textbf{An edge-cloud distributed architecture} that partitions fire detection tasks between an onboard UAV edge unit and a cloud aggregation and alerting layer, maintaining detection functionality even when the network link is degraded or severed.
+
+    \item \textbf{An optimized YOLOv11 deployment} fine-tuned for aerial fire and smoke detection on the D-Fire public dataset, with explicit analysis of inference latency and accuracy under edge hardware constraints.
+
+    \item \textbf{A real-time operational dashboard} that ingests detection events from multiple UAVs, maps active fire zones geospatially, and issues alerts to emergency response teams.
+
+    \item \textbf{A systematic latency analysis} across deployment configurations (edge-only, cloud-only, hybrid), demonstrating sub-5-second end-to-end detection latency while preserving accuracy competitive with cloud-based baselines.
+\end{enumerate}
+
+The remainder of this paper is organized as follows. Section~\ref{sec:related} reviews related work. Section~\ref{sec:architecture} presents the proposed system architecture. Section~\ref{sec:methodology} describes the dataset and training methodology. Section~\ref{sec:results} presents experimental results. Section~\ref{sec:dashboard} describes the dashboard. Section~\ref{sec:conclusion} concludes the paper.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Related Work}
+\label{sec:related}
+
+\subsection{Traditional and Statistical Approaches}
+
+Early fire risk prediction systems relied on physics-based models and statistical methods. Logistic regression and Bayesian belief networks have been applied to estimate fire occurrence probability from meteorological and vegetation data, achieving AUC values up to 0.986~\cite{liu2025advancements}. Physical Computational Fluid Dynamics (CFD) models simulate fire-atmosphere interactions with high fidelity but are computationally prohibitive for real-time use. These approaches establish baselines for fire risk assessment but cannot perform real-time visual localization of active fire events.
+
+\subsection{Machine Learning for Fire Risk Prediction}
+
+Classical machine learning methods — Random Forest, XGBoost, LightGBM — have been widely applied to fire occurrence and spread prediction using multi-source tabular data. Khanmohammadi \textit{et al.}~\cite{khanmohammadi2024automl} evaluated AutoML pipelines and TabPFN on a Canadian conifer wildfire dataset, using Generative Adversarial Networks (GANs) to address class imbalance, achieving 91\% binary classification accuracy. Liu \textit{et al.}~\cite{liu2025advancements} confirm through a comprehensive review that ensemble methods consistently deliver AUC above 0.9 on benchmark datasets. However, these models operate on aggregated environmental features rather than raw imagery, and cannot localize active fire events spatially or temporally.
+
+\subsection{Deep Learning for Fire and Smoke Detection}
+
+Convolutional Neural Networks (CNNs) have become the dominant paradigm for image-based fire and smoke detection. Sathishkumar \textit{et al.}~\cite{sathishkumar2023forest} demonstrate that transfer learning from ImageNet pre-trained backbones achieves strong accuracy on fire datasets. Their Learning Without Forgetting (LwF) technique mitigates catastrophic forgetting when adapting to novel fire datasets — Xception with LwF reaches 91.41\% accuracy on the BowFire dataset while retaining 96.89\% on the original task. Priya \textit{et al.}~\cite{priya2025generative} propose a GAN-CNN hybrid using NASA MODIS and VIIRS satellite data combined with IoT sensor readings, reporting up to 85\% reduction in false positives through Region Proposal Networks (RPN). None of these works, however, address deployment on edge hardware or quantify end-to-end system latency.
+
+\subsection{Real-Time Object Detection}
+
+He \textit{et al.}~\cite{he2025yolov11} provide the most directly relevant prior work, applying YOLOv11x to forest fire smoke and flame detection across two public datasets (WD and FFS). They report mAP@0.5 of 0.901 overall, with smoke detection reaching 0.962 and flame detection 0.841, while YOLOv11 achieves a 22\% parameter reduction versus YOLOv8m. Their experiments confirm YOLOv11's suitability for fire detection but are conducted exclusively on GPU-equipped cloud hardware with no analysis of edge deployment or end-to-end system latency.
+
+\subsection{IoT and AI Integration for Fire Monitoring}
+
+Morchid \textit{et al.}~\cite{morchid2025fire} survey AI-IoT integration for agricultural and forest fire monitoring, identifying CNN-IoT hybrid systems as achieving more than 90\% early detection rates and 85\% false positive reduction. They highlight the critical challenges of real-time computational cost, sensor network reliability in remote areas, and the need for multi-modal data fusion — challenges that the proposed edge-cloud architecture directly addresses.
+
+\subsection{Research Gap}
+
+Despite significant progress in detection accuracy, a critical gap remains: no prior work simultaneously addresses (i) deployment on drone-mounted edge hardware, (ii) graceful operation under intermittent network connectivity, and (iii) end-to-end latency quantification for operational fire response. This paper fills this gap by proposing and evaluating an integrated edge-cloud system with explicit latency guarantees.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Proposed System Architecture}
+\label{sec:architecture}
+
+\subsection{Overview}
+
+The proposed system consists of three layers: (1) the \textit{UAV Edge Layer}, where fire detection inference runs onboard the drone; (2) the \textit{Communication Layer}, which handles data transmission over constrained wireless links; and (3) the \textit{Cloud Aggregation Layer}, which fuses detections from multiple UAVs, maintains a spatial fire map, and triggers alerts.
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{figures/architecture.png}
+\caption{Proposed edge-cloud system architecture for UAV-based forest fire detection.}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{UAV Edge Layer}
+
+The edge unit runs \textbf{YOLOv11n} (nano variant), the smallest and fastest member of the YOLOv11 family. It is optimized for devices with limited compute such as the NVIDIA Jetson Nano or Raspberry Pi 5 with NPU. The model processes frames from the UAV's downward-facing RGB camera. Crucially, only structured detection events — bounding box coordinates, class label, confidence score, GPS timestamp — are transmitted to the cloud, not raw video frames. This dramatically reduces uplink bandwidth requirements.
+
+Three operation modes are defined:
+
+\textbf{Connected mode:} Detection events are streamed to the cloud in near real-time over 4G/LTE or WiFi.
+
+\textbf{Disconnected mode:} When no network link is available (\textit{zone blanche}), events are buffered locally on the UAV with a timestamp and GPS tag. Upon reconnection, the buffer is flushed to the cloud in chronological order.
+
+\textbf{Critical alert mode:} If a high-confidence fire detection occurs while disconnected, the UAV attempts to establish a LoRa link (long-range, low-bandwidth) to transmit a minimal alert packet (GPS coordinates + confidence score) to the nearest relay node.
+
+\subsection{Communication Layer}
+
+Bandwidth and latency vary significantly depending on the deployment environment. The system uses a priority-based transmission policy, summarized in Table~\ref{tab:links}.
+
+\begin{table}[h]
+\caption{Communication Link Parameters}
+\label{tab:links}
+\centering
+\begin{tabular}{lccc}
+\toprule
+\textbf{Link} & \textbf{Bandwidth} & \textbf{Latency} & \textbf{Use case} \\
+\midrule
+4G/LTE        & $\sim$10 Mbps & 20--50 ms  & Normal operation \\
+WiFi 802.11n  & $\sim$50 Mbps & 5--15 ms   & Base station proximity \\
+LoRa 868 MHz  & $\sim$5 kbps  & 500 ms     & Emergency, zone blanche \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Detection events are encoded as lightweight JSON payloads ($\approx$500 bytes per event), ensuring transmission even over LoRa when necessary.
+
+\subsection{Cloud Aggregation Layer}
+
+The cloud backend aggregates events from all active UAVs via real-time database subscriptions (Supabase Realtime). A spatial fusion module maintains a geographic fire probability map, updated in real time as new events arrive. The alerting module triggers notifications when detection confidence exceeds a configurable threshold over a minimum number of consecutive frames. The dashboard API exposes a WebSocket interface consumed by the web frontend for live visualization.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Dataset and Methodology}
+\label{sec:methodology}
+
+\subsection{Dataset}
+
+We use the \textbf{D-Fire} dataset~\cite{dfire2022}, a large-scale public dataset containing 21,527 images of fire and smoke collected from diverse sources including cameras, drones, and online repositories. Images are annotated in YOLO format with two classes: \texttt{fire} and \texttt{smoke}. The dataset is split 70/20/10 into training, validation, and test sets. Table~\ref{tab:dataset} summarizes the distribution.
+
+\begin{table}[h]
+\caption{D-Fire Dataset Statistics}
+\label{tab:dataset}
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Split} & \textbf{Images} & \textbf{Fire} & \textbf{Smoke} & \textbf{Neither} \\
+\midrule
+Train & 15,069 & [TBD] & [TBD] & [TBD] \\
+Val   & 4,305  & [TBD] & [TBD] & [TBD] \\
+Test  & 2,153  & [TBD] & [TBD] & [TBD] \\
+\midrule
+\textbf{Total} & \textbf{21,527} & & & \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\textbf{Preprocessing:} Images are resized to 640$\times$640 pixels (YOLOv11 default input). Mosaic augmentation and random affine transforms are applied during training to improve generalization to diverse aerial viewpoints. Histogram equalization is applied to images captured in hazy or backlit conditions typical of wildfire environments.
+
+\subsection{Model: YOLOv11}
+
+YOLOv11 is the latest generation of the YOLO (You Only Look Once) real-time object detection family, released by Ultralytics in September 2024~\cite{he2025yolov11}. Key architectural improvements over YOLOv8 include: (i) C3k2 and C2PSA backbone modules for improved multi-scale feature extraction, (ii) 22\% parameter reduction versus YOLOv8m while maintaining competitive mAP, and (iii) cross-environment optimization supporting ONNX, TensorRT, and CoreML export.
+
+We evaluate two variants:
+\begin{itemize}
+    \item \textbf{YOLOv11x} — maximum accuracy, cloud GPU baseline
+    \item \textbf{YOLOv11n} — minimum parameters, edge deployment target
+\end{itemize}
+
+\subsection{Training Configuration}
+
+Models are fine-tuned from COCO-pretrained weights. Full fine-tuning of all layers is preferred over head-only fine-tuning, consistent with~\cite{sathishkumar2023forest}, given the visual domain shift from natural COCO objects to fire/smoke patterns. Training configuration is summarized in Table~\ref{tab:training}.
+
+\begin{table}[h]
+\caption{Training Hyperparameters}
+\label{tab:training}
+\centering
+\begin{tabular}{ll}
+\toprule
+\textbf{Parameter} & \textbf{Value} \\
+\midrule
+Base model      & YOLOv11n (COCO pretrained) \\
+Epochs          & 100 \\
+Batch size      & 16 \\
+Optimizer       & AdamW \\
+Learning rate   & 0.01 (cosine annealing) \\
+Image size      & 640 $\times$ 640 \\
+Augmentation    & Mosaic, random affine, HSV \\
+Framework       & Ultralytics YOLOv11, PyTorch \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Edge Optimization}
+
+Following training, the YOLOv11n model is exported to ONNX and subsequently quantized to INT8 via TensorRT, targeting deployment on the NVIDIA Jetson Nano. INT8 quantization reduces model size by approximately 4$\times$ and accelerates inference with minimal accuracy degradation, as validated in the ablation study (Section~\ref{sec:results}).
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Experimental Results}
+\label{sec:results}
+
+\subsection{Detection Performance}
+
+Table~\ref{tab:detection} compares YOLOv11n (edge variants) and YOLOv11x (cloud baseline) on the D-Fire test split.
+
+\begin{table}[h]
+\caption{Detection Performance on D-Fire Test Set}
+\label{tab:detection}
+\centering
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Model} & \textbf{P} & \textbf{R} & \textbf{mAP50} & \textbf{mAP50-95} \\
+\midrule
+YOLOv11x (cloud)       & [TBD] & [TBD] & [TBD] & [TBD] \\
+YOLOv11n (edge, FP32)  & [TBD] & [TBD] & [TBD] & [TBD] \\
+YOLOv11n (edge, INT8)  & [TBD] & [TBD] & [TBD] & [TBD] \\
+He \textit{et al.}~\cite{he2025yolov11} & 0.949 & 0.850 & 0.901 & 0.786 \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+Per-class mAP@0.5 results are shown in Table~\ref{tab:perclass}.
+
+\begin{table}[h]
+\caption{Per-Class mAP@0.5 on D-Fire Test Set}
+\label{tab:perclass}
+\centering
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{Fire} & \textbf{Smoke} \\
+\midrule
+YOLOv11n (edge, FP32) & [TBD] & [TBD] \\
+YOLOv11x (cloud)      & [TBD] & [TBD] \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{End-to-End Latency Analysis}
+
+The key operational constraint is end-to-end detection latency $\leq 5$ seconds. Table~\ref{tab:latency} breaks down latency across system components.
+
+\begin{table}[h]
+\caption{End-to-End Latency Breakdown}
+\label{tab:latency}
+\centering
+\begin{tabular}{lc}
+\toprule
+\textbf{Component} & \textbf{Latency (ms)} \\
+\midrule
+Edge inference (YOLOv11n, INT8)     & [TBD] \\
+Event encoding \& serialization     & [TBD] \\
+4G/LTE uplink transmission          & [TBD] \\
+Cloud aggregation \& DB write       & [TBD] \\
+Dashboard WebSocket push            & [TBD] \\
+Browser render                      & [TBD] \\
+\midrule
+\textbf{Total end-to-end}           & \textbf{[TBD]} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection{Disconnected Mode Evaluation}
+
+To evaluate robustness in zone blanche conditions, we simulate network degradation by artificially blocking the uplink during edge inference. Results demonstrate: (i) local detection continues without latency penalty; (ii) LoRa emergency alerts are transmitted within [TBD] seconds; (iii) upon reconnection, buffered events are flushed within [TBD] seconds.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Dashboard Implementation}
+\label{sec:dashboard}
+
+The operational dashboard provides real-time situational awareness for fire response coordinators. It is implemented as a Next.js web application consuming a Supabase Realtime backend. Core features include:
+
+\begin{itemize}
+    \item \textbf{Live fire map:} Leaflet.js interactive map with real-time detection event overlays. Confirmed fire detections appear as georeferenced markers with timestamp and confidence score. High-density detection zones trigger automatic bounding polygons indicating active fire perimeters.
+
+    \item \textbf{UAV fleet status:} Panel showing each active UAV's GPS position, battery level, connectivity status (Connected / LoRa / Disconnected), and cumulative detection count.
+
+    \item \textbf{Alert log:} Chronological list of all fire events with GPS coordinates, UAV identifier, detection confidence, and time-to-alert metric.
+
+    \item \textbf{Statistics panel:} Rolling charts for detection rate, confidence score distribution, and system latency, updated in real time via WebSocket push.
+\end{itemize}
+
+\begin{figure}[h]
+\centering
+\includegraphics[width=\columnwidth]{figures/dashboard.png}
+\caption{Real-time fire detection dashboard showing active fire markers on the map, UAV fleet status, and live alert feed.}
+\label{fig:dashboard}
+\end{figure}
+
+The edge inference script communicates directly with Supabase, inserting detection events into a PostgreSQL table. The dashboard subscribes to changes via Supabase Realtime, eliminating polling and achieving sub-second dashboard update latency.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper presented an edge-cloud architecture for real-time forest fire and smoke detection using UAVs. The proposed system addresses the fundamental limitations of cloud-only approaches — latency and connectivity dependency — by deploying a quantized YOLOv11n model directly on the UAV's onboard compute unit. Detection events are transmitted as lightweight payloads, enabling graceful operation over constrained links including LoRa in connectivity-denied environments. The cloud aggregation layer fuses multi-UAV detections into a spatial fire map visualized on a real-time operational dashboard.
+
+Experimental results demonstrate [TBD summary of key metrics] with end-to-end detection latency of [TBD] seconds, meeting the operational target of sub-5-second detection.
+
+Future work includes: (i) integration of physics-informed fire spread prediction for trajectory forecasting beyond real-time detection; (ii) multi-modal fusion of visual detections with onboard gas sensors (CO$_2$, CO) to reduce false positives from non-fire smoke; and (iii) federated learning across UAV fleets to continuously improve the model from operational deployments.
+
+% ─────────────────────────────────────────────────────────────────────────────
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+\end{document}

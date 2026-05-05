@@ -1,0 +1,15 @@
+# D-Fire dataset configuration for YOLOv11
+# Download from: https://github.com/gaiasd/DFireDataset
+# Or Kaggle: https://www.kaggle.com/datasets/decorrespondent/d-fire
+#
+# After downloading, set the 'path' field to your local dataset root.
+
+path: ../data/d-fire        # dataset root (relative to this file or absolute)
+train: images/train
+val: images/val
+test: images/test
+
+nc: 2                        # number of classes
+names:
+  0: fire
+  1: smoke
