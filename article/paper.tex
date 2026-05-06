@@ -330,9 +330,9 @@ live fire map.
 
 \subsection{UAV Edge Layer}
 
-The edge unit runs \textbf{YOLOv11n} (nano variant), quantized to INT8
-via ONNX Runtime, targeting devices such as the NVIDIA Jetson Nano or
-Raspberry Pi 5 with NPU. Only structured detection events — bounding
+The edge unit runs \textbf{YOLOv11n} (nano variant), exported to ONNX
+FP32 format via ONNX Runtime and benchmarked on CPU as a proxy for
+embedded devices such as the NVIDIA Jetson Nano or Raspberry Pi 5 with NPU. Only structured detection events — bounding
 box coordinates, class label, confidence score, GPS timestamp — are
 transmitted. This reduces uplink bandwidth requirements by orders of
 magnitude compared to raw video streaming.
@@ -517,7 +517,6 @@ direct numerical comparison is approximate.
 \midrule
 YOLOv11x (cloud)      & [TBD] & [TBD] & [TBD] & [TBD] \\
 YOLOv11n (edge, FP32) & [TBD] & [TBD] & [TBD] & [TBD] \\
-YOLOv11n (edge, INT8) & [TBD] & [TBD] & [TBD] & [TBD] \\
 \midrule
 He et al.~\cite{he2025yolov11}$^\dagger$ & 0.949 & 0.850 & 0.901 & 0.786 \\
 \bottomrule
@@ -585,7 +584,13 @@ insert.
 
 \begin{figure}[h]
 \centering
-\includegraphics[width=\columnwidth]{figures/dashboard.png}
+\IfFileExists{figures/dashboard.png}{%
+  \includegraphics[width=\columnwidth]{figures/dashboard.png}%
+}{%
+  \fbox{\parbox{\columnwidth}{\centering\vspace{1.5cm}
+    \textit{[Dashboard screenshot — add figures/dashboard.png]}
+    \vspace{1.5cm}}}%
+}
 \caption{Real-time fire detection dashboard. Fire events (red) and
   smoke events (orange) are rendered as georeferenced confidence-scaled
   markers on an OpenStreetMap base layer. The right sidebar shows UAV

@@ -440,11 +440,11 @@
               (50,Cloud)
               (35,Network)
               (2,Encode)
-              (0,Inference)
+              (200,Inference)
             };
         \end{axis}
       \end{tikzpicture}
-      \tiny{Inference bar = [TBD] after training}
+      \tiny{Inference = [TBD]\,ms — placeholder shown}
   \end{columns}
 \end{frame}
 
@@ -472,8 +472,13 @@
         Watch map update live
       \end{block}
     \column{0.5\textwidth}
-      % Replace with actual dashboard screenshot
-      \includegraphics[width=\textwidth]{../article/figures/dashboard.png}
+      \IfFileExists{../article/figures/dashboard.png}{%
+        \includegraphics[width=\textwidth]{../article/figures/dashboard.png}%
+      }{%
+        \fbox{\parbox{\textwidth}{\centering\vspace{1.8cm}
+          \textit{[Dashboard screenshot]}
+          \vspace{1.8cm}}}%
+      }
   \end{columns}
 \end{frame}
 
