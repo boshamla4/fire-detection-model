@@ -1,38 +1,60 @@
-% ============================================================
-% Presentation: Edge-Cloud Architecture for Forest Fire Detection
-% Author: Alaaeddine Bouchamla
-% ENISO — M1 Telecommunications Engineering
-% Compile with: pdflatex slides.tex (or use Overleaf)
-% ============================================================
-
 \documentclass[aspectratio=169,10pt]{beamer}
 
 \usetheme{Madrid}
-\usecolortheme{crane}
-\useinnertheme{circles}
+\usecolortheme{default}
 
-% Custom colors
-\definecolor{fireRed}{RGB}{220,38,38}
-\definecolor{smokeOrange}{RGB}{234,88,12}
+\definecolor{fireRed}{RGB}{185,28,28}
+\definecolor{edgeOrange}{RGB}{194,65,12}
+\definecolor{commBlue}{RGB}{29,78,216}
+\definecolor{cloudTeal}{RGB}{15,118,110}
+\definecolor{alertGreen}{RGB}{22,101,52}
+\definecolor{smokeGray}{RGB}{75,85,99}
 \definecolor{darkBg}{RGB}{15,23,42}
-\definecolor{slateBlue}{RGB}{51,65,85}
 
-\setbeamercolor{frametitle}{bg=slateBlue,fg=white}
+\setbeamercolor{frametitle}{bg=darkBg,fg=white}
 \setbeamercolor{title}{fg=fireRed}
 \setbeamercolor{structure}{fg=fireRed}
 \setbeamercolor{block title}{bg=fireRed,fg=white}
+\setbeamercolor{block body}{bg=fireRed!8}
+\setbeamercolor{alerted text}{fg=fireRed}
 
 \usepackage{booktabs}
 \usepackage{graphicx}
 \usepackage{tikz}
 \usepackage{pgfplots}
 \pgfplotsset{compat=1.18}
+\usetikzlibrary{
+  arrows.meta, shapes.geometric, positioning,
+  fit, backgrounds, calc
+}
 
-% ─── Title info ────────────────────────────────────────────────────────────
+\tikzset{
+  sblk/.style 2 args={
+    draw=#1!80, thick, rounded corners=3pt, fill=#1, text=white,
+    minimum width=#2, minimum height=0.6cm,
+    align=center, font=\tiny\bfseries, inner sep=4pt
+  },
+  slayer/.style={
+    draw=#1, thick, dashed, rounded corners=6pt,
+    fill=#1!10, inner sep=8pt, line width=1pt
+  },
+  sarr/.style={-{Stealth[length=4pt,width=3pt]}, thick},
+  sdarr/.style={-{Stealth[length=4pt,width=3pt]}, thick, dashed, gray},
+  sproc/.style={
+    draw=#1!80, thick, rounded corners=2pt, fill=#1!15,
+    minimum width=2.2cm, minimum height=0.55cm,
+    align=center, font=\tiny\bfseries
+  },
+  sdiam/.style={
+    draw=yellow!70!black, thick, diamond, fill=yellow!15,
+    minimum width=1.4cm, minimum height=0.5cm,
+    align=center, font=\tiny\bfseries, aspect=2
+  }
+}
+
 \title[Fire Detection — Edge-Cloud]{
   Edge-Cloud Architecture for Real-Time\\
-  Forest Fire Detection Using YOLOv11\\
-  on UAV Imagery
+  Forest Fire Detection Using YOLOv11
 }
 \subtitle{M1 Research Project — Telecommunications Engineering}
 \author{Alaaeddine Bouchamla}
@@ -41,255 +63,452 @@
 
 \begin{document}
 
-% ─── Title slide ───────────────────────────────────────────────────────────
+% ── Title ──────────────────────────────────────────────────────────
 \begin{frame}
   \titlepage
 \end{frame}
 
-% ─── Outline ───────────────────────────────────────────────────────────────
+% ── Outline ────────────────────────────────────────────────────────
 \begin{frame}{Outline}
   \tableofcontents
 \end{frame}
 
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 \section{Motivation}
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 
-\begin{frame}{Why Forest Fire Detection?}
+\begin{frame}{Why Real-Time Forest Fire Detection?}
   \begin{columns}
     \column{0.55\textwidth}
       \begin{itemize}
-        \item \textbf{13.4M hectares} burned in 2023 (Europe, North Africa, North America)
-        \item Economic and ecological losses worth billions annually
-        \item \textbf{Critical detection window:} early minutes determine total area burned
+        \item \textbf{13.4M hectares} burned in 2023 globally
+        \item Billions in economic and ecological losses annually
+        \item Early detection is critical — every minute matters
       \end{itemize}
-      \vspace{1em}
-      \textbf{Existing systems fail because:}
+      \vspace{0.6em}
+      \textbf{Why existing systems fail:}
       \begin{itemize}
-        \item Satellite revisit: \textbf{30 min–several hours} delay
+        \item Satellites: \textbf{30 min – several hours} revisit delay
         \item Ground sensors: limited coverage, costly deployment
-        \item Cloud AI: works, but needs \textbf{reliable network} — unavailable in forests
+        \item Cloud-only AI: breaks down in \textbf{zone blanche} — remote
+              forests with no connectivity
       \end{itemize}
     \column{0.45\textwidth}
-      % \includegraphics[width=\textwidth]{figures/wildfire_photo.jpg}
-      \begin{block}{Target latency}
-        \centering\Large $< 5$ seconds end-to-end
+      \begin{block}{\centering Operational target}
+        \centering\Large $< 5$ seconds\\end-to-end detection latency
       \end{block}
+      \vspace{0.5em}
+      \begin{alertblock}{\centering Our answer}
+        \centering AI onboard the UAV\\
+        Works even without network
+      \end{alertblock}
   \end{columns}
 \end{frame}
 
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 \section{Related Work}
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 
-\begin{frame}{What Has Been Done}
+\begin{frame}{Prior Work — What's Been Done}
   \begin{table}
-    \centering
-    \small
-    \begin{tabular}{lll}
+    \centering\small
+    \begin{tabular}{llll}
       \toprule
-      \textbf{Approach} & \textbf{Best result} & \textbf{Limitation} \\
+      \textbf{Method} & \textbf{Paper} & \textbf{Best result} & \textbf{Gap} \\
       \midrule
-      AutoML + GANs \scriptsize{[Khanmohammadi 2024]} & 91\% accuracy & Tabular data only \\
-      Transfer learning + LwF \scriptsize{[Sathishkumar 2023]} & 91.4\% (BowFire) & No real-time \\
-      GAN-CNN hybrid \scriptsize{[Priya 2025]} & 85\% FP reduction & Cloud only \\
-      \textbf{YOLOv11x} \scriptsize{[He 2025]} & mAP@0.5 = 0.901 & \textbf{Cloud GPU only} \\
+      AutoML + GAN & Khanmohammadi 2024 & 91\% accuracy & Tabular only \\
+      Transfer + LwF & Sathishkumar 2023 & 91.4\% acc. & No real-time \\
+      GAN-CNN + IoT & Priya 2025 & 85\% FP reduction & Cloud only \\
+      \textbf{YOLOv11x} & \textbf{He 2025} & \textbf{mAP@0.5 = 0.901} & \textbf{Cloud GPU only} \\
       \bottomrule
     \end{tabular}
   \end{table}
-  \vspace{0.5em}
+  \vspace{0.4em}
   \begin{alertblock}{Research gap}
-    No prior work deploys on edge hardware, handles disconnected zones,\\
-    or measures end-to-end latency for operational fire response.
+    No prior work deploys on edge hardware, handles zone blanche, or
+    measures end-to-end operational latency.
   \end{alertblock}
 \end{frame}
 
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 \section{System Architecture}
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 
-\begin{frame}{Edge-Cloud Architecture Overview}
+\begin{frame}{Three-Layer Edge-Cloud Architecture}
+  \centering
+  \begin{tikzpicture}[node distance=0.35cm and 0.5cm]
+    % Edge layer
+    \node[sblk={edgeOrange}{1.5cm}]              (cam)  {Camera};
+    \node[sblk={edgeOrange}{1.6cm},right=of cam] (pre)  {Preprocess};
+    \node[sblk={fireRed}{1.7cm},   right=of pre] (yolo) {YOLOv11n\\INT8};
+    \node[sblk={smokeGray}{1.6cm}, right=of yolo, xshift=0.9cm](buf){Buffer\\(offline)};
+
+    % Comm layer
+    \node[sblk={commBlue}{5.5cm},below=1.2cm of pre,xshift=1cm](comm)
+         {4G/LTE \quad WiFi \quad LoRa 868\,MHz};
+
+    % Cloud layer
+    \node[sblk={cloudTeal}{1.5cm},below=1.2cm of comm,xshift=-2.4cm](sup){Supabase\\Realtime};
+    \node[sblk={cloudTeal}{1.5cm},right=of sup]  (fus){Spatial\\Fusion};
+    \node[sblk={cloudTeal}{1.5cm},right=of fus]  (api){Dashboard\\WS};
+    \node[sblk={alertGreen}{1.5cm},right=of api] (alt){Alert\\System};
+
+    % Backgrounds
+    \begin{scope}[on background layer]
+      \node[slayer=edgeOrange, fit=(cam)(pre)(yolo)(buf)](ebg){};
+      \node[slayer=commBlue,   fit=(comm)](cbg){};
+      \node[slayer=cloudTeal,  fit=(sup)(fus)(api)(alt)](clbg){};
+    \end{scope}
+
+    % Labels
+    \node[above=3pt of ebg,  font=\tiny\bfseries,text=edgeOrange]{Layer 1 — UAV Edge};
+    \node[above=3pt of cbg,  font=\tiny\bfseries,text=commBlue]{Layer 2 — Communication};
+    \node[above=3pt of clbg, font=\tiny\bfseries,text=cloudTeal]{Layer 3 — Cloud};
+
+    % Arrows
+    \draw[sarr](cam)--(pre);
+    \draw[sarr](pre)--(yolo);
+    \draw[sdarr](yolo)--(buf);
+    \draw[sarr,edgeOrange](yolo.south)--++(0,-0.45)
+         node[right,font=\tiny,midway,text=black]{events}
+         -|([xshift=-0.5cm]comm.north);
+    \draw[sdarr](buf.south)--++(0,-0.3)-|([xshift=0.8cm]comm.north);
+    \draw[sarr](comm.south)--++(0,-0.45)-|(sup.north);
+    \draw[sarr](sup)--(fus);
+    \draw[sarr](fus)--(api);
+    \draw[sarr](api)--(alt);
+  \end{tikzpicture}
+
+  \vspace{0.3em}
   \begin{columns}
-    \column{0.5\textwidth}
-      \textbf{Three layers:}
-      \begin{enumerate}
-        \item \textbf{UAV Edge Layer} — YOLOv11n inference onboard
-        \item \textbf{Communication Layer} — 4G/LTE · WiFi · LoRa fallback
-        \item \textbf{Cloud Layer} — event aggregation, fire map, alerts
-      \end{enumerate}
-      \vspace{0.7em}
-      \textbf{Three connectivity modes:}
-      \begin{itemize}
-        \item \textcolor{green!60!black}{Connected} — stream events live
-        \item \textcolor{orange}{Zone blanche} — buffer locally
-        \item \textcolor{red}{Critical} — LoRa emergency packet
-      \end{itemize}
-    \column{0.5\textwidth}
-      % \includegraphics[width=\textwidth]{figures/architecture.png}
-      \begin{block}{Key insight}
-        Only~\textbf{500-byte JSON events} are transmitted\\
-        — not raw video frames.\\
-        Works even over LoRa (5 kbps).
-      \end{block}
+    \column{0.33\textwidth}
+      \centering\scriptsize\textcolor{edgeOrange}{\textbf{Edge:}}\\
+      YOLOv11n runs onboard\\
+      No raw video sent
+    \column{0.33\textwidth}
+      \centering\scriptsize\textcolor{commBlue}{\textbf{Comm:}}\\
+      500\,B JSON events\\
+      LoRa fallback
+    \column{0.33\textwidth}
+      \centering\scriptsize\textcolor{cloudTeal}{\textbf{Cloud:}}\\
+      Supabase Realtime\\
+      Live map + alerts
   \end{columns}
 \end{frame}
 
-\begin{frame}{Communication Link Comparison}
-  \begin{table}
-    \centering
-    \begin{tabular}{lccc}
-      \toprule
-      \textbf{Link} & \textbf{Bandwidth} & \textbf{Latency} & \textbf{Use case} \\
-      \midrule
-      4G/LTE       & $\sim$10 Mbps & 20–50 ms  & Normal operation \\
-      WiFi 802.11n & $\sim$50 Mbps & 5–15 ms   & Near base station \\
-      LoRa 868 MHz & $\sim$5 kbps  & 500 ms    & Zone blanche \\
-      \bottomrule
-    \end{tabular}
-  \end{table}
-\end{frame}
-
-% ═══════════════════════════════════════════════════════════════════════════
-\section{Dataset \& Methodology}
-% ═══════════════════════════════════════════════════════════════════════════
-
-\begin{frame}{Dataset: D-Fire}
+\begin{frame}{System Flowchart}
   \begin{columns}
-    \column{0.5\textwidth}
-      \begin{itemize}
-        \item \textbf{21,527 images} of fire and smoke
-        \item Classes: \texttt{fire}, \texttt{smoke}
-        \item Split: 70 / 20 / 10 (train / val / test)
-        \item Diverse sources: cameras, drones, online
-        \item Publicly available on GitHub (gaiasd/DFireDataset)
-      \end{itemize}
-    \column{0.5\textwidth}
-      % \includegraphics[width=\textwidth]{figures/dataset_samples.png}
-      \begin{block}{Preprocessing}
-        640×640 resize · Mosaic augmentation\\
-        Random affine · Histogram equalization
-      \end{block}
-  \end{columns}
-\end{frame}
-
-\begin{frame}{YOLOv11 — Model Choice}
-  \begin{columns}
+    \column{0.45\textwidth}
+      \centering
+      \begin{tikzpicture}[node distance=0.3cm]
+        \node[sproc=commBlue](ds){D-Fire Dataset\\21{,}527 images};
+        \node[sproc=commBlue,below=of ds](pp){Preprocessing\\640$\times$640};
+        \node[sproc=fireRed, below=of pp](tr){YOLOv11 Training\\100 epochs};
+        \node[sproc=fireRed, below=of tr](ev){Evaluation\\mAP, P, R};
+        \node[sproc=edgeOrange,below=of ev](ex){ONNX Export\\INT8};
+        \node[sproc=edgeOrange,below=of ex](ei){Edge Inference\\UAV frames};
+        \draw[sarr](ds)--(pp);
+        \draw[sarr](pp)--(tr);
+        \draw[sarr](tr)--(ev);
+        \draw[sarr](ev)--(ex);
+        \draw[sarr](ex)--(ei);
+      \end{tikzpicture}
     \column{0.55\textwidth}
-      \textbf{Why YOLOv11?}
+      \centering
+      \begin{tikzpicture}[node distance=0.3cm]
+        \node[sdiam](cn){Network\\OK?};
+        \node[sproc=cloudTeal, right=0.8cm of cn](sb){Supabase\\Insert};
+        \node[sproc=smokeGray, left=0.8cm of cn](lb){Local\\Buffer};
+        \node[sproc=cloudTeal, below=0.3cm of sb](dsh){Dashboard\\Update};
+        \node[sproc=alertGreen,below=0.3cm of dsh](alt){Alert\\System};
+        \draw[sarr](cn)--node[above,font=\tiny]{Yes}(sb);
+        \draw[sarr](cn)--node[above,font=\tiny]{No}(lb);
+        \draw[sarr](lb.south)--++(0,-0.2)
+             -|node[below,font=\tiny,pos=0.25]{reconnect}(sb.south);
+        \draw[sarr](sb)--(dsh);
+        \draw[sarr](dsh)--(alt);
+      \end{tikzpicture}
+      \vspace{0.3em}
+      \scriptsize\textcolor{smokeGray}{\textbf{Offline resilience:}}
+      Events buffered locally when network unavailable, flushed on reconnect.
+  \end{columns}
+\end{frame}
+
+\begin{frame}{Connectivity Modes}
+  \begin{columns}
+    \column{0.33\textwidth}
+      \begin{block}{\centering Connected (4G/LTE)}
+        \centering
+        \vspace{0.3em}
+        \begin{tikzpicture}
+          \node[sblk={fireRed}{1.2cm}](uav){UAV};
+          \node[sblk={cloudTeal}{1.2cm},right=0.6cm of uav](cl){Cloud};
+          \draw[sarr,very thick,green!60!black](uav)--(cl)
+               node[above,font=\tiny,midway,text=black]{$<$50\,ms};
+        \end{tikzpicture}\\
+        \vspace{0.3em}\scriptsize
+        Events streamed live\\
+        Full dashboard update
+      \end{block}
+    \column{0.33\textwidth}
+      \begin{block}{\centering Zone Blanche}
+        \centering
+        \vspace{0.3em}
+        \begin{tikzpicture}
+          \node[sblk={fireRed}{1.2cm}](uav){UAV};
+          \node[sblk={smokeGray}{1.2cm},right=0.6cm of uav](buf){Buffer};
+          \node[sblk={cloudTeal}{1.0cm},right=0.5cm of buf](cl){Cloud};
+          \draw[sarr](uav)--(buf);
+          \draw[sdarr](buf)--(cl) node[above,font=\tiny,midway]{later};
+        \end{tikzpicture}\\
+        \vspace{0.3em}\scriptsize
+        Events written locally\\
+        Flushed on reconnect
+      \end{block}
+    \column{0.33\textwidth}
+      \begin{block}{\centering LoRa Alert}
+        \centering
+        \vspace{0.3em}
+        \begin{tikzpicture}
+          \node[sblk={fireRed}{1.2cm}](uav){UAV};
+          \node[sblk={edgeOrange}{1.2cm},right=0.5cm of uav](relay){Relay};
+          \node[sblk={cloudTeal}{1.0cm},right=0.5cm of relay](cl){Cloud};
+          \draw[sarr,orange](uav)--(relay)
+               node[above,font=\tiny,midway]{LoRa};
+          \draw[sarr](relay)--(cl);
+        \end{tikzpicture}\\
+        \vspace{0.3em}\scriptsize
+        GPS + confidence\\
+        500\,ms latency
+      \end{block}
+  \end{columns}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════
+\section{Dataset \& Model}
+% ═══════════════════════════════════════════════════════════════════
+
+\begin{frame}{D-Fire Dataset}
+  \begin{columns}
+    \column{0.5\textwidth}
       \begin{itemize}
-        \item Released September 2024 (state-of-the-art)
-        \item C3k2 + C2PSA backbone — better small-object detection
-        \item \textbf{22\% fewer parameters} than YOLOv8m, same mAP
-        \item Exports to ONNX, TensorRT, CoreML for edge devices
+        \item \textbf{21,527 images} — fire, smoke, mixed, none
+        \item YOLO-format annotations (2 classes)
+        \item Split: 70\,/\,20\,/\,10 (train/val/test)
+        \item Diverse: cameras, drones, online footage
       \end{itemize}
       \vspace{0.5em}
+      \textbf{Why D-Fire?}\\
+      Same family as He et al.~[2025] — allows approximate comparison
+    \column{0.5\textwidth}
+      \centering
+      \begin{tikzpicture}
+        \begin{axis}[
+          ybar, width=5.5cm, height=4cm,
+          bar width=0.5cm,
+          symbolic x coords={Fire only,Smoke only,Both,None},
+          xtick=data,
+          xticklabel style={font=\tiny,rotate=30,anchor=east},
+          yticklabel style={font=\tiny},
+          ylabel={\scriptsize Images},
+          ylabel style={font=\scriptsize},
+          ymin=0, ymax=11000,
+          title={\scriptsize Dataset Distribution},
+          title style={font=\scriptsize},
+          axis lines=left,
+          enlarge x limits=0.2
+        ]
+          \addplot[fill=fireRed!80]
+            coordinates{(Fire only,1164)(Smoke only,5867)(Both,4658)(None,9838)};
+        \end{axis}
+      \end{tikzpicture}
+  \end{columns}
+\end{frame}
+
+\begin{frame}{YOLOv11 — Detection Pipeline}
+  \centering
+  \begin{tikzpicture}[node distance=0.25cm and 0.4cm]
+    \node[sblk={commBlue}{1.5cm}]               (inp){Input\\640$^2$};
+    \node[sblk={edgeOrange}{1.7cm},right=of inp](bk) {Backbone\\C3k2};
+    \node[sblk={edgeOrange}{1.7cm},right=of bk] (nk) {Neck\\C2PSA+FPN};
+    \node[sblk={fireRed}{1.7cm},   right=of nk] (hd) {Detection\\Head};
+    \node[sblk={fireRed}{1.4cm},   above right=0.25cm and 0.4cm of hd](f){Fire};
+    \node[sblk={smokeGray}{1.4cm}, below right=0.25cm and 0.4cm of hd](s){Smoke};
+    \node[sblk={cloudTeal}{1.5cm}, right=1cm of hd](ev){JSON\\Event};
+    \draw[sarr](inp)--(bk);
+    \draw[sarr](bk)--(nk);
+    \draw[sarr](nk)--(hd);
+    \draw[sarr](hd.east)|- (f.west);
+    \draw[sarr](hd.east)|- (s.west);
+    \draw[sarr](f.east)-|(ev.north);
+    \draw[sarr](s.east)-|(ev.south);
+  \end{tikzpicture}
+
+  \vspace{0.8em}
+  \begin{columns}
+    \column{0.5\textwidth}
       \textbf{Two variants evaluated:}
       \begin{itemize}
         \item \texttt{YOLOv11x} — cloud GPU baseline
-        \item \texttt{YOLOv11n} + INT8 — \textbf{edge deployment}
+        \item \texttt{YOLOv11n} + INT8 — edge target
       \end{itemize}
-    \column{0.45\textwidth}
-      \begin{block}{Training config}
-        \texttt{epochs=100, batch=16}\\
-        \texttt{optimizer=AdamW, lr=0.01}\\
-        \texttt{pretrained=COCO}\\
-        Full fine-tuning (all layers)
-      \end{block}
+    \column{0.5\textwidth}
+      \textbf{vs. YOLOv8m:}
+      \begin{itemize}
+        \item 22\% fewer parameters
+        \item C3k2 + C2PSA attention
+        \item Comparable mAP
+      \end{itemize}
   \end{columns}
 \end{frame}
 
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 \section{Results}
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 
 \begin{frame}{Detection Performance}
   \begin{table}
-    \centering
+    \centering\small
     \begin{tabular}{lcccc}
       \toprule
-      \textbf{Model} & \textbf{P} & \textbf{R} & \textbf{mAP50} & \textbf{mAP50-95} \\
+      \textbf{Model} & \textbf{P} & \textbf{R} & \textbf{mAP50} & \textbf{mAP50-95}\\
       \midrule
       YOLOv11x (cloud)      & [TBD] & [TBD] & [TBD] & [TBD] \\
       YOLOv11n (FP32 edge)  & [TBD] & [TBD] & [TBD] & [TBD] \\
       YOLOv11n (INT8 edge)  & [TBD] & [TBD] & [TBD] & [TBD] \\
       \midrule
-      He et al. 2025 (ref.) & 0.949 & 0.850 & 0.901 & 0.786 \\
+      He et al. 2025$^\dagger$  & 0.949 & 0.850 & 0.901 & 0.786 \\
       \bottomrule
+      \multicolumn{5}{l}{\tiny $^\dagger$ Different dataset (WD+FFS); approximate reference.}
     \end{tabular}
   \end{table}
-  \vspace{0.5em}
-  % Add after training: highlight your best result
-\end{frame}
-
-\begin{frame}{Latency Analysis}
+  \vspace{0.4em}
+  \textbf{Per-class mAP@0.5:}
   \begin{table}
-    \centering
-    \begin{tabular}{lc}
+    \centering\small
+    \begin{tabular}{lcc}
       \toprule
-      \textbf{Component} & \textbf{Latency (ms)} \\
+      \textbf{Model} & \textbf{Fire} & \textbf{Smoke}\\
       \midrule
-      Edge inference (YOLOv11n INT8) & [TBD] \\
-      Event encoding                 & [TBD] \\
-      4G/LTE uplink                  & [TBD] \\
-      Cloud write + WebSocket push   & [TBD] \\
-      Dashboard render               & [TBD] \\
-      \midrule
-      \textbf{Total end-to-end}      & \textbf{[TBD] < 5000} \\
+      YOLOv11n (edge) & [TBD] & [TBD]\\
+      YOLOv11x (cloud)& [TBD] & [TBD]\\
       \bottomrule
     \end{tabular}
   \end{table}
 \end{frame}
 
-% ═══════════════════════════════════════════════════════════════════════════
+\begin{frame}{End-to-End Latency}
+  \begin{columns}
+    \column{0.5\textwidth}
+      \begin{table}
+        \centering\small
+        \begin{tabular}{lc}
+          \toprule
+          \textbf{Component} & \textbf{ms}\\
+          \midrule
+          Edge inference (ONNX) & [TBD]\\
+          Event encoding        & $\approx$2\\
+          4G/LTE uplink         & 20--50\\
+          Supabase + WebSocket  & $\approx$50\\
+          Dashboard render      & $\approx$100\\
+          \midrule
+          \textbf{Total} & \textbf{[TBD]}\\
+          \textbf{Target}& \textbf{$<$5\,000}\\
+          \bottomrule
+        \end{tabular}
+      \end{table}
+    \column{0.5\textwidth}
+      \centering
+      \begin{tikzpicture}
+        \begin{axis}[
+          xbar, width=5cm, height=4.5cm,
+          bar width=0.35cm,
+          symbolic y coords={Render,Cloud,Network,Encode,Inference},
+          ytick=data,
+          yticklabel style={font=\tiny},
+          xticklabel style={font=\tiny},
+          xlabel={\scriptsize Latency (ms)},
+          xlabel style={font=\scriptsize},
+          xmin=0,
+          title={\scriptsize Latency breakdown},
+          title style={font=\scriptsize},
+          axis lines=left,
+        ]
+          \addplot[fill=fireRed!70]
+            coordinates{
+              (100,Render)
+              (50,Cloud)
+              (35,Network)
+              (2,Encode)
+              (0,Inference)
+            };
+        \end{axis}
+      \end{tikzpicture}
+      \tiny{Inference bar = [TBD] after training}
+  \end{columns}
+\end{frame}
+
+% ═══════════════════════════════════════════════════════════════════
 \section{Dashboard}
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 
 \begin{frame}{Real-Time Operational Dashboard}
   \begin{columns}
     \column{0.5\textwidth}
+      \textbf{Stack:} Next.js · Tailwind CSS · Supabase Realtime · Vercel\\
+      \vspace{0.5em}
       \textbf{Features:}
       \begin{itemize}
-        \item Live fire event map (Leaflet.js + OpenStreetMap)
-        \item UAV fleet status panel (battery, connectivity)
-        \item Alert log with GPS, confidence, timestamp
-        \item Confidence distribution chart
-        \item WebSocket push via Supabase Realtime
+        \item Leaflet.js map with confidence heatmap\\
+              {\tiny radius $\propto$ confidence, opacity decays with time}
+        \item UAV fleet status (battery, connectivity)
+        \item Live alert log (class, confidence, GPS)
+        \item Real-time confidence histogram
+        \item WebSocket push — no polling
       \end{itemize}
       \vspace{0.5em}
-      \textbf{Stack:} Next.js · Tailwind · Supabase · Vercel
+      \begin{block}{Live demo}
+        \centering Run \texttt{edge/inference.py -{}-simulate}\\
+        Watch map update live
+      \end{block}
     \column{0.5\textwidth}
-      % \includegraphics[width=\textwidth]{figures/dashboard.png}
-      \begin{center}
-        \Large\textcolor{fireRed}{$\Rightarrow$ Live demo}
-      \end{center}
+      % Replace with actual dashboard screenshot
+      \includegraphics[width=\textwidth]{../article/figures/dashboard.png}
   \end{columns}
 \end{frame}
 
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 \section{Conclusion}
-% ═══════════════════════════════════════════════════════════════════════════
+% ═══════════════════════════════════════════════════════════════════
 
 \begin{frame}{Conclusion \& Future Work}
   \begin{columns}
     \column{0.55\textwidth}
       \textbf{Contributions:}
       \begin{itemize}
-        \item Edge-cloud architecture with graceful offline degradation
-        \item YOLOv11n INT8 achieving [TBD] mAP in [TBD] ms on edge
-        \item End-to-end latency $<$ 5 seconds
-        \item Real-time dashboard deployed on Vercel + Supabase
+        \item Edge-cloud architecture with offline resilience
+        \item YOLOv11n INT8: [TBD] mAP in [TBD]\,ms
+        \item End-to-end latency $<$ 5\,s validated
+        \item Real-time dashboard on Vercel + Supabase
+      \end{itemize}
+      \vspace{0.5em}
+      \textbf{Limitations:}
+      \begin{itemize}
+        \item Edge latency simulated (CPU proxy, not Jetson)
+        \item D-Fire includes ground + aerial images
       \end{itemize}
     \column{0.45\textwidth}
       \textbf{Future work:}
       \begin{itemize}
         \item Physics-informed fire spread prediction
-        \item Multi-modal sensor fusion (CO$_2$, thermal)
+        \item Multi-modal fusion (CO$_2$, thermal)
         \item Federated learning across UAV fleet
+        \item Real Jetson Nano deployment
       \end{itemize}
   \end{columns}
   \vspace{1em}
   \begin{center}
-    \Large Thank you — Questions?
+    \Large\textcolor{fireRed}{\textbf{Thank you — Questions?}}
   \end{center}
 \end{frame}
 

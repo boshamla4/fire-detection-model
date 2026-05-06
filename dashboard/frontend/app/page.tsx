@@ -9,32 +9,45 @@ import AlertLog from "@/components/AlertLog";
 import StatsPanel from "@/components/StatsPanel";
 import { Flame } from "lucide-react";
 
-// Leaflet must be loaded client-side only (no SSR)
 const FireMap = dynamic(() => import("@/components/FireMap"), { ssr: false });
 
 const MAX_EVENTS = 200;
 
+type TimeRange = "1h" | "24h" | "7d" | "all";
+
+function rangeToISO(range: TimeRange): string | null {
+  if (range === "all") return null;
+  const ms = { "1h": 3600_000, "24h": 86_400_000, "7d": 604_800_000 }[range];
+  return new Date(Date.now() - ms).toISOString();
+}
+
 export default function DashboardPage() {
-  const [events, setEvents] = useState<DetectionEvent[]>([]);
+  const [allEvents, setAllEvents] = useState<DetectionEvent[]>([]);
   const [uavStatuses, setUavStatuses] = useState<UAVStatus[]>([]);
   const [connected, setConnected] = useState(false);
+  const [timeRange, setTimeRange] = useState<TimeRange>("24h");
 
   const addEvent = useCallback((event: DetectionEvent) => {
-    setEvents((prev) => [event, ...prev].slice(0, MAX_EVENTS));
+    setAllEvents((prev) => [event, ...prev].slice(0, MAX_EVENTS));
   }, []);
 
+  // Re-query Supabase whenever the time range changes
   useEffect(() => {
-    // Load recent events on mount
-    supabase
+    const since = rangeToISO(timeRange);
+    let query = supabase
       .from("detection_events")
       .select("*")
       .order("created_at", { ascending: false })
-      .limit(50)
-      .then(({ data }) => {
-        if (data) setEvents(data as DetectionEvent[]);
-      });
+      .limit(200);
 
-    // Load UAV statuses on mount
+    if (since) query = query.gte("created_at", since);
+
+    query.then(({ data }) => {
+      if (data) setAllEvents(data as DetectionEvent[]);
+    });
+  }, [timeRange]);
+
+  useEffect(() => {
     supabase
       .from("uav_status")
       .select("*")
@@ -42,7 +55,6 @@ export default function DashboardPage() {
         if (data) setUavStatuses(data as UAVStatus[]);
       });
 
-    // Subscribe to new detection events in real time
     const eventChannel = supabase
       .channel("detection-events")
       .on(
@@ -54,7 +66,6 @@ export default function DashboardPage() {
         setConnected(status === "SUBSCRIBED");
       });
 
-    // Subscribe to UAV status updates
     const statusChannel = supabase
       .channel("uav-status")
       .on(
@@ -77,6 +88,13 @@ export default function DashboardPage() {
     };
   }, [addEvent]);
 
+  // Filter displayed events by the selected time range (client-side, for new real-time events)
+  const events = (() => {
+    const since = rangeToISO(timeRange);
+    if (!since) return allEvents;
+    return allEvents.filter((e) => e.created_at >= since);
+  })();
+
   const totalDetections = events.length;
   const fireCount = events.filter((e) => e.class === "fire").length;
   const smokeCount = events.filter((e) => e.class === "smoke").length;
@@ -91,24 +109,43 @@ export default function DashboardPage() {
             Forest Fire Detection — Real-Time Dashboard
           </h1>
         </div>
-        <div className="flex items-center gap-2 text-sm">
-          <span
-            className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-red-500"}`}
-          />
-          <span className="text-slate-400">
-            {connected ? "Live" : "Connecting..."}
-          </span>
+        <div className="flex items-center gap-4">
+          {/* Time range selector */}
+          <div className="flex items-center gap-1 bg-slate-700 rounded-lg p-1">
+            {(["1h", "24h", "7d", "all"] as TimeRange[]).map((r) => (
+              <button
+                key={r}
+                onClick={() => setTimeRange(r)}
+                className={`px-3 py-1 rounded-md text-xs font-medium transition-colors ${
+                  timeRange === r
+                    ? "bg-slate-900 text-white"
+                    : "text-slate-400 hover:text-slate-200"
+                }`}
+              >
+                {r === "all" ? "All" : r === "1h" ? "1 h" : r === "24h" ? "24 h" : "7 d"}
+              </button>
+            ))}
+          </div>
+
+          <div className="flex items-center gap-2 text-sm">
+            <span
+              className={`w-2 h-2 rounded-full ${connected ? "bg-green-400" : "bg-red-500"}`}
+            />
+            <span className="text-slate-400">
+              {connected ? "Live" : "Connecting..."}
+            </span>
+          </div>
         </div>
       </header>
 
       {/* Main layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Map — takes up the majority of the screen */}
+        {/* Map */}
         <div className="flex-1 relative">
           <FireMap events={events} uavStatuses={uavStatuses} />
 
-          {/* Floating stats overlay */}
-          <div className="absolute top-4 left-4 z-[1000] flex gap-2">
+          {/* Floating stats — left-16 clears the Leaflet zoom buttons */}
+          <div className="absolute top-4 left-16 z-[1000] flex gap-2">
             <StatBadge label="Total" value={totalDetections} color="blue" />
             <StatBadge label="Fire" value={fireCount} color="red" />
             <StatBadge label="Smoke" value={smokeCount} color="orange" />

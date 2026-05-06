@@ -1,11 +1,10 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { MapContainer, TileLayer, CircleMarker, Popup, Marker, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Marker, useMap } from "react-leaflet";
 import L from "leaflet";
 import type { DetectionEvent, UAVStatus } from "@/lib/types";
 
-// Fix Leaflet default marker icon in webpack builds
 delete (L.Icon.Default.prototype as any)._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
@@ -36,15 +35,25 @@ function AutoPan({ events }: { events: DetectionEvent[] }) {
     const latest = events[0];
     if (latest && latest.id !== lastEventId.current) {
       lastEventId.current = latest.id;
-      // Soft pan only — don't disrupt user navigation
     }
   }, [events, map]);
 
   return null;
 }
 
+/** Radius in metres for the heatmap glow ring (150–400 m scaled by confidence). */
+function heatRadius(confidence: number): number {
+  return 150 + confidence * 250;
+}
+
+/** Opacity decays with event age — max 0.25, fully fades after 30 min. */
+function heatOpacity(createdAt: string, confidence: number): number {
+  const ageMs = Date.now() - new Date(createdAt).getTime();
+  const ageFade = Math.max(0, 1 - ageMs / (30 * 60_000));
+  return ageFade * confidence * 0.25;
+}
+
 export default function FireMap({ events, uavStatuses }: Props) {
-  // Default center: Tunisia forests area
   const center: [number, number] = [36.8065, 9.5];
 
   return (
@@ -60,7 +69,26 @@ export default function FireMap({ events, uavStatuses }: Props) {
 
       <AutoPan events={events} />
 
-      {/* Detection event markers */}
+      {/* Heatmap glow rings — rendered beneath the solid dot */}
+      {events.map((event) => {
+        const opacity = heatOpacity(event.created_at, event.confidence);
+        if (opacity < 0.01) return null;
+        return (
+          <Circle
+            key={`heat-${event.id}`}
+            center={[event.lat, event.lng]}
+            radius={heatRadius(event.confidence)}
+            pathOptions={{
+              color: "transparent",
+              fillColor: event.class === "fire" ? "#ef4444" : "#f97316",
+              fillOpacity: opacity,
+              weight: 0,
+            }}
+          />
+        );
+      })}
+
+      {/* Solid detection dot */}
       {events.map((event) => (
         <CircleMarker
           key={event.id}
