@@ -46,11 +46,11 @@ function heatRadius(confidence: number): number {
   return 150 + confidence * 250;
 }
 
-/** Opacity decays with event age — max 0.25, fully fades after 30 min. */
+/** Opacity decays with event age — max 0.30, fully fades after 2 hours. */
 function heatOpacity(createdAt: string, confidence: number): number {
   const ageMs = Date.now() - new Date(createdAt).getTime();
-  const ageFade = Math.max(0, 1 - ageMs / (30 * 60_000));
-  return ageFade * confidence * 0.25;
+  const ageFade = Math.max(0, 1 - ageMs / (120 * 60_000));
+  return ageFade * confidence * 0.30;
 }
 
 export default function FireMap({ events, uavStatuses }: Props) {

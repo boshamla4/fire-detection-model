@@ -11,7 +11,7 @@ import { Flame } from "lucide-react";
 
 const FireMap = dynamic(() => import("@/components/FireMap"), { ssr: false });
 
-const MAX_EVENTS = 200;
+const MAX_EVENTS = 500;
 
 type TimeRange = "1h" | "24h" | "7d" | "all";
 
