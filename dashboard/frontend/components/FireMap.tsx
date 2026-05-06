@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MapContainer, TileLayer, CircleMarker, Circle, Popup, Marker, useMap } from "react-leaflet";
+import {
+  MapContainer, TileLayer, CircleMarker, Circle,
+  Popup, Marker, Polyline, useMap,
+} from "react-leaflet";
 import L from "leaflet";
 import type { DetectionEvent, UAVStatus } from "@/lib/types";
 
@@ -12,6 +15,7 @@ L.Icon.Default.mergeOptions({
   shadowUrl:     "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
+// Drone SVG icon
 const DRONE_ICON = L.divIcon({
   className: "",
   html: `<svg xmlns="http://www.w3.org/2000/svg" width="38" height="38" viewBox="0 0 38 38">
@@ -31,6 +35,27 @@ const DRONE_ICON = L.divIcon({
   iconAnchor: [19, 19],
 });
 
+// Base station landing pad icon
+const BASE_ICON = L.divIcon({
+  className: "",
+  html: `<svg xmlns="http://www.w3.org/2000/svg" width="48" height="48" viewBox="0 0 48 48">
+    <circle cx="24" cy="24" r="22" fill="#0f172a" stroke="#84cc16" stroke-width="2.5"/>
+    <circle cx="24" cy="24" r="15" fill="none"  stroke="#84cc16" stroke-width="1"
+            stroke-dasharray="5 3" opacity="0.6"/>
+    <line x1="17" y1="17" x2="17" y2="31" stroke="#84cc16" stroke-width="3" stroke-linecap="round"/>
+    <line x1="31" y1="17" x2="31" y2="31" stroke="#84cc16" stroke-width="3" stroke-linecap="round"/>
+    <line x1="17" y1="24" x2="31" y2="24" stroke="#84cc16" stroke-width="3" stroke-linecap="round"/>
+  </svg>`,
+  iconSize:   [48, 48],
+  iconAnchor: [24, 24],
+});
+
+// Must match inference.py BASE_LAT / BASE_LNG
+const BASE: [number, number] = [35.7200, 10.5400];
+
+// Trail colours per UAV (cycles if more than 2)
+const TRAIL_COLORS = ["#84cc16", "#22d3ee", "#f472b6", "#fb923c"];
+
 interface Props {
   events:      DetectionEvent[];
   uavStatuses: UAVStatus[];
@@ -47,8 +72,8 @@ function AutoPan({ events }: { events: DetectionEvent[] }) {
   return null;
 }
 
-/** Smoothly animates a UAV marker between position updates. */
-function UAVMarker({ uav }: { uav: UAVStatus }) {
+/** Smoothly animates UAV marker between GPS updates. */
+function UAVMarker({ uav, color }: { uav: UAVStatus; color: string }) {
   const [pos, setPos] = useState<[number, number]>([uav.lat, uav.lng]);
   const fromRef = useRef<[number, number]>([uav.lat, uav.lng]);
   const animRef = useRef<number | null>(null);
@@ -56,17 +81,13 @@ function UAVMarker({ uav }: { uav: UAVStatus }) {
   useEffect(() => {
     const from = fromRef.current;
     const to: [number, number] = [uav.lat, uav.lng];
-    const t0 = performance.now();
-    const dur = 1800; // slightly under STATUS_INTERVAL for seamless feel
+    const t0  = performance.now();
+    const dur = 1800;
 
     if (animRef.current) cancelAnimationFrame(animRef.current);
-
     const step = (now: number) => {
       const p = Math.min(1, (now - t0) / dur);
-      setPos([
-        from[0] + (to[0] - from[0]) * p,
-        from[1] + (to[1] - from[1]) * p,
-      ]);
+      setPos([from[0] + (to[0] - from[0]) * p, from[1] + (to[1] - from[1]) * p]);
       if (p < 1) animRef.current = requestAnimationFrame(step);
       else fromRef.current = to;
     };
@@ -74,17 +95,17 @@ function UAVMarker({ uav }: { uav: UAVStatus }) {
     return () => { if (animRef.current) cancelAnimationFrame(animRef.current); };
   }, [uav.lat, uav.lng]);
 
+  const isCharging = uav.connectivity === "lora";
+
   return (
     <Marker position={pos} icon={DRONE_ICON}>
       <Popup>
         <div className="text-sm">
           <strong>🚁 {uav.uav_id}</strong><br />
+          {isCharging
+            ? <span style={{ color: "#84cc16" }}>⚡ Charging at base</span>
+            : <span style={{ color: "#4ade80" }}>✈ Patrolling</span>}<br />
           Battery: {uav.battery_pct}%<br />
-          Status:{" "}
-          <span className={
-            uav.connectivity === "connected" ? "text-green-600" :
-            uav.connectivity === "lora"      ? "text-yellow-600" : "text-red-600"
-          }>{uav.connectivity}</span><br />
           Detections: {uav.detection_count}
         </div>
       </Popup>
@@ -92,11 +113,9 @@ function UAVMarker({ uav }: { uav: UAVStatus }) {
   );
 }
 
-function heatRadius(confidence: number): number {
-  return 150 + confidence * 250;
-}
+function heatRadius(confidence: number) { return 150 + confidence * 250; }
 
-function heatOpacity(createdAt: string, confidence: number): number {
+function heatOpacity(createdAt: string, confidence: number) {
   const ageMs   = Date.now() - new Date(createdAt).getTime();
   const ageFade = Math.max(0, 1 - ageMs / (120 * 60_000));
   return ageFade * confidence * 0.30;
@@ -104,6 +123,31 @@ function heatOpacity(createdAt: string, confidence: number): number {
 
 export default function FireMap({ events, uavStatuses, selectedUav }: Props) {
   const center: [number, number] = [35.7303, 10.5621];
+
+  // Build UAV index for consistent colours
+  const uavIndex = useRef<Record<string, number>>({});
+  uavStatuses.forEach((u) => {
+    if (uavIndex.current[u.uav_id] === undefined) {
+      uavIndex.current[u.uav_id] = Object.keys(uavIndex.current).length;
+    }
+  });
+
+  // Track coverage trail per UAV
+  const [trails, setTrails] = useState<Record<string, [number, number][]>>({});
+  useEffect(() => {
+    setTrails((prev) => {
+      const next = { ...prev };
+      for (const uav of uavStatuses) {
+        const trail = next[uav.uav_id] ?? [];
+        const last  = trail[trail.length - 1];
+        // Add point only if moved > ~50 m to avoid redundant dots
+        if (!last || Math.abs(last[0] - uav.lat) > 0.0005 || Math.abs(last[1] - uav.lng) > 0.0005) {
+          next[uav.uav_id] = [...trail, [uav.lat, uav.lng] as [number, number]].slice(-600);
+        }
+      }
+      return next;
+    });
+  }, [uavStatuses]);
 
   const visibleEvents = selectedUav
     ? events.filter((e) => e.uav_id === selectedUav)
@@ -121,6 +165,34 @@ export default function FireMap({ events, uavStatuses, selectedUav }: Props) {
       />
       <AutoPan events={visibleEvents} />
 
+      {/* Coverage trails */}
+      {Object.entries(trails).map(([uavId, trail]) => {
+        if (trail.length < 2) return null;
+        if (selectedUav && selectedUav !== uavId) return null;
+        const idx   = uavIndex.current[uavId] ?? 0;
+        const color = TRAIL_COLORS[idx % TRAIL_COLORS.length];
+        return (
+          <Polyline
+            key={`trail-${uavId}`}
+            positions={trail}
+            pathOptions={{ color, weight: 3, opacity: 0.45, dashArray: "6 4" }}
+          />
+        );
+      })}
+
+      {/* Base station marker */}
+      <Marker position={BASE} icon={BASE_ICON}>
+        <Popup>
+          <div className="text-sm">
+            <strong style={{ color: "#84cc16" }}>🏠 UAV Base Station</strong><br />
+            UAVs return here when battery &lt; 20%<br />
+            <span className="text-gray-500 text-xs">
+              {BASE[0].toFixed(4)}, {BASE[1].toFixed(4)}
+            </span>
+          </div>
+        </Popup>
+      </Marker>
+
       {/* Heatmap glow rings */}
       {visibleEvents.map((event) => {
         const opacity = heatOpacity(event.created_at, event.confidence);
@@ -131,10 +203,10 @@ export default function FireMap({ events, uavStatuses, selectedUav }: Props) {
             center={[event.lat, event.lng]}
             radius={heatRadius(event.confidence)}
             pathOptions={{
-              color:       "transparent",
+              color: "transparent",
               fillColor:   event.class === "fire" ? "#ef4444" : "#f97316",
               fillOpacity: opacity,
-              weight:      0,
+              weight: 0,
             }}
           />
         );
@@ -150,7 +222,7 @@ export default function FireMap({ events, uavStatuses, selectedUav }: Props) {
             color:       event.class === "fire" ? "#ef4444" : "#f97316",
             fillColor:   event.class === "fire" ? "#ef4444" : "#f97316",
             fillOpacity: Math.max(0.3, event.confidence),
-            weight:      2,
+            weight: 2,
           }}
         >
           <Popup>
@@ -170,9 +242,11 @@ export default function FireMap({ events, uavStatuses, selectedUav }: Props) {
       ))}
 
       {/* Animated UAV markers */}
-      {uavStatuses.map((uav) => (
-        <UAVMarker key={uav.uav_id} uav={uav} />
-      ))}
+      {uavStatuses.map((uav) => {
+        const idx   = uavIndex.current[uav.uav_id] ?? 0;
+        const color = TRAIL_COLORS[idx % TRAIL_COLORS.length];
+        return <UAVMarker key={uav.uav_id} uav={uav} color={color} />;
+      })}
     </MapContainer>
   );
 }

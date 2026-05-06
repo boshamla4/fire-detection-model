@@ -27,6 +27,7 @@ export default function DashboardPage() {
   const [connected, setConnected] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
   const [selectedUav, setSelectedUav] = useState<string | null>(null);
+  const [minConf, setMinConf] = useState<number>(0);
 
   const addEvent = useCallback((event: DetectionEvent) => {
     setAllEvents((prev) => [event, ...prev].slice(0, MAX_EVENTS));
@@ -89,11 +90,11 @@ export default function DashboardPage() {
     };
   }, [addEvent]);
 
-  // Filter displayed events by the selected time range (client-side, for new real-time events)
   const events = (() => {
     const since = rangeToISO(timeRange);
-    if (!since) return allEvents;
-    return allEvents.filter((e) => e.created_at >= since);
+    return allEvents.filter(
+      (e) => e.confidence >= minConf && (!since || e.created_at >= since)
+    );
   })();
 
   const totalDetections = events.length;
@@ -158,6 +159,30 @@ export default function DashboardPage() {
           <div className="p-3 border-b border-slate-700 shrink-0">
             <UAVStatusPanel statuses={uavStatuses} selectedUav={selectedUav} onSelect={setSelectedUav} />
           </div>
+          {/* Confidence threshold slider */}
+          <div className="px-3 py-2.5 border-b border-slate-700 shrink-0">
+            <div className="flex items-center justify-between mb-1.5">
+              <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Min Confidence
+              </h2>
+              <span className="text-xs font-bold text-slate-200">
+                {minConf === 0 ? "All" : `≥ ${Math.round(minConf * 100)}%`}
+              </span>
+            </div>
+            <input
+              type="range"
+              min="0"
+              max="0.9"
+              step="0.05"
+              value={minConf}
+              onChange={(e) => setMinConf(parseFloat(e.target.value))}
+              className="w-full h-1.5 rounded-full appearance-none cursor-pointer bg-slate-700 accent-orange-500"
+            />
+            <div className="flex justify-between text-slate-600 text-xs mt-0.5">
+              <span>0%</span><span>45%</span><span>90%</span>
+            </div>
+          </div>
+
           <div className="p-3 border-b border-slate-700 shrink-0">
             <StatsPanel events={events} />
           </div>

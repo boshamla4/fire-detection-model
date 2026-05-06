@@ -1,8 +1,8 @@
 """
 UAV edge inference node — simulate or real mode.
 
-Simulate mode: UAVs patrol waypoints around Msaken; detections are generated
-near persistent fire hotspots (smoke when far, fire when close).
+Simulate mode: UAVs patrol waypoints; return to base when battery < 20%;
+recharge at base then resume patrol. False alarm sources included.
 
 Usage:
     python inference.py --simulate --uav-id UAV-01
@@ -27,78 +27,74 @@ load_dotenv()
 
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-UAV_ID       = os.environ.get("UAV_ID",   "UAV-01")
+UAV_ID       = os.environ.get("UAV_ID",    "UAV-01")
 SIM_LAT      = float(os.environ.get("SIM_LAT", "35.7303"))
 SIM_LNG      = float(os.environ.get("SIM_LNG", "10.5621"))
 
-CLASS_NAMES     = {0: "fire", 1: "smoke"}
-STATUS_INTERVAL = 2.0    # seconds between UAV status pushes (smooth movement)
-CONF_THRESHOLD  = 0.45
+# UAV base station — landing pad southwest of Msaken
+BASE_LAT = float(os.environ.get("BASE_LAT", "35.7200"))
+BASE_LNG = float(os.environ.get("BASE_LNG", "10.5400"))
 
-# ── Persistent fire hotspots around Msaken forests ───────────────────────────
-# Each entry: (lat, lng, intensity 0-1)
+CLASS_NAMES     = {0: "fire", 1: "smoke"}
+STATUS_INTERVAL = 2.0   # seconds between Supabase status pushes
+CONF_THRESHOLD  = 0.45
+PATROL_SPEED    = 0.0004           # degrees per simulation step
+RETURN_SPEED    = PATROL_SPEED * 2 # faster when returning to base
+DRAIN_RATE      = 0.1              # battery % per second (100→20% in ~13 min)
+CHARGE_RATE     = 1.0              # battery % per second (20→100% in ~80 s)
+
+# ── Fire hotspots ─────────────────────────────────────────────────────────────
 HOTSPOTS = [
     (35.7820, 10.5050, 0.92),   # Jbel Zaghouan foothills — active fire
     (35.6980, 10.6230, 0.75),   # Enfidha scrubland — spreading smoke
     (35.7150, 10.4680, 0.55),   # Msaken olive grove — early smoke
 ]
 
-# ── False alarm sources — civilian smoke, never becomes fire ──────────────────
-# Each entry: (lat, lng, label)
+# ── False alarm sources — civilian smoke only ─────────────────────────────────
 FALSE_ALARM_SOURCES = [
-    (35.7420, 10.5680, "industrial chimney"),   # Msaken industrial zone
-    (35.7600, 10.5300, "agricultural burning"), # Farm stubble burning
+    (35.7420, 10.5680, "industrial chimney"),
+    (35.7600, 10.5300, "agricultural burning"),
 ]
 
-# ── Patrol waypoints per UAV (cycles indefinitely) ───────────────────────────
+# ── Patrol waypoints ──────────────────────────────────────────────────────────
 PATROL = {
     "UAV-01": [
         (35.8000, 10.4800),
-        (35.7820, 10.5050),   # passes near hotspot 0
+        (35.7820, 10.5050),
         (35.7500, 10.5600),
         (35.7200, 10.6100),
-        (35.6980, 10.6230),   # passes near hotspot 1
+        (35.6980, 10.6230),
         (35.6800, 10.5500),
         (35.7000, 10.4900),
-        (35.7150, 10.4680),   # passes near hotspot 2
+        (35.7150, 10.4680),
     ],
     "UAV-02": [
         (35.7600, 10.6400),
         (35.7300, 10.6200),
-        (35.6980, 10.6230),   # passes near hotspot 1
+        (35.6980, 10.6230),
         (35.6900, 10.5700),
-        (35.7150, 10.4680),   # passes near hotspot 2
+        (35.7150, 10.4680),
         (35.7500, 10.4900),
-        (35.7820, 10.5050),   # passes near hotspot 0
+        (35.7820, 10.5050),
         (35.8000, 10.5500),
     ],
 }
-DEFAULT_PATROL = PATROL["UAV-01"]   # fallback for unknown UAV IDs
-
-PATROL_SPEED = 0.0004   # degrees per simulation step (~45 km/h at this lat)
+DEFAULT_PATROL = PATROL["UAV-01"]
 
 
 def geo_dist(lat1, lng1, lat2, lng2) -> float:
-    """Euclidean distance in degrees (accurate enough for <50 km)."""
     return math.sqrt((lat1 - lat2) ** 2 + (lng1 - lng2) ** 2)
 
 
-def move_toward(lat, lng, target_lat, target_lng, speed):
-    """Step toward target, return new position and whether target was reached."""
-    dist = geo_dist(lat, lng, target_lat, target_lng)
+def move_toward(lat, lng, t_lat, t_lng, speed):
+    dist = geo_dist(lat, lng, t_lat, t_lng)
     if dist < speed:
-        return target_lat, target_lng, True
-    ratio = speed / dist
-    return lat + (target_lat - lat) * ratio, lng + (target_lng - lng) * ratio, False
+        return t_lat, t_lng, True
+    r = speed / dist
+    return lat + (t_lat - lat) * r, lng + (t_lng - lng) * r, False
 
 
 def check_hotspots(lat, lng) -> dict | None:
-    """
-    Return a detection event if the UAV is near a hotspot or false alarm source.
-    Hotspots: smoke far, fire close, confidence scales with proximity.
-    False alarm sources: smoke only, lower confidence, infrequent.
-    """
-    # Check real fire hotspots
     for h_lat, h_lng, intensity in HOTSPOTS:
         dist = geo_dist(lat, lng, h_lat, h_lng)
         if dist > 0.05:
@@ -106,12 +102,9 @@ def check_hotspots(lat, lng) -> dict | None:
         p = intensity * max(0, (0.05 - dist) / 0.05) * 0.25
         if random.random() > p:
             continue
-        if dist < 0.015:
-            cls  = "fire"
-            conf = round(min(0.99, 0.75 + intensity * 0.24 - dist * 5), 3)
-        else:
-            cls  = "smoke"
-            conf = round(min(0.90, 0.50 + intensity * 0.30 - dist * 3), 3)
+        cls  = "fire" if dist < 0.015 else "smoke"
+        conf = round(min(0.99, (0.75 if cls == "fire" else 0.50)
+                         + intensity * 0.24 - dist * 5), 3)
         return {
             "id":         str(uuid.uuid4()),
             "uav_id":     UAV_ID,
@@ -123,14 +116,11 @@ def check_hotspots(lat, lng) -> dict | None:
             "frame_id":   int(time.time()),
         }
 
-    # Check false alarm sources (civilian smoke — never fire)
     for f_lat, f_lng, label in FALSE_ALARM_SOURCES:
         dist = geo_dist(lat, lng, f_lat, f_lng)
-        if dist > 0.04:
+        if dist > 0.04 or random.random() > 0.06:
             continue
-        if random.random() > 0.06:   # infrequent — these are sporadic
-            continue
-        conf = round(random.uniform(0.45, 0.65), 3)  # lower confidence
+        conf = round(random.uniform(0.45, 0.65), 3)
         print(f"[FALSE ALARM] {label} — smoke conf={conf:.3f}")
         return {
             "id":         str(uuid.uuid4()),
@@ -142,7 +132,6 @@ def check_hotspots(lat, lng) -> dict | None:
             "confidence": conf,
             "frame_id":   int(time.time()),
         }
-
     return None
 
 
@@ -154,14 +143,14 @@ def connect_supabase() -> Client | None:
         return None
 
 
-def push_event(client: Client | None, event: dict) -> bool:
+def push_event(client, event):
     if client is None:
         local_buffer.enqueue(event)
         return False
     try:
         client.table("detection_events").insert(event).execute()
         buffered = local_buffer.size()
-        if buffered > 0:
+        if buffered:
             flushed = local_buffer.flush(client)
             if flushed:
                 print(f"[INFO] Flushed {flushed} buffered events")
@@ -172,18 +161,19 @@ def push_event(client: Client | None, event: dict) -> bool:
         return False
 
 
-def update_uav_status(client: Client | None, lat: float, lng: float,
-                      battery: float, detection_count: int):
+def push_status(client, lat, lng, battery, detection_count, mode):
     if client is None:
         return
+    # connectivity: "lora" signals UAV is at base charging; "connected" = in flight
+    connectivity = "lora" if mode == "charging" else "connected"
     try:
         client.table("uav_status").upsert({
             "uav_id":          UAV_ID,
             "updated_at":      datetime.now(timezone.utc).isoformat(),
             "lat":             round(lat, 6),
             "lng":             round(lng, 6),
-            "battery_pct":     round(battery),
-            "connectivity":    "connected",
+            "battery_pct":     max(0, min(100, round(battery))),
+            "connectivity":    connectivity,
             "detection_count": detection_count,
         }).execute()
     except Exception:
@@ -209,50 +199,72 @@ def main():
         UAV_ID = args.uav_id
 
     supabase = connect_supabase()
-    print(f"[{'OK' if supabase else 'WARN'}]  Supabase {'connected' if supabase else "offline — buffering"}")
+    print(f"[{'OK' if supabase else 'WARN'}]  Supabase {'connected' if supabase else 'offline'}")
 
     if not args.simulate:
         assert args.weights, "Provide --weights or use --simulate"
         from ultralytics import YOLO
         import cv2
-        model = YOLO(args.weights)
+        model  = YOLO(args.weights)
         source = int(args.source) if args.source.isdigit() else args.source
-        cap = cv2.VideoCapture(source)
+        cap    = cv2.VideoCapture(source)
         if not cap.isOpened():
             raise RuntimeError(f"Cannot open: {source}")
-        print(f"[OK]  Model loaded | Source: {source}")
 
-    waypoints  = PATROL.get(UAV_ID, DEFAULT_PATROL)
-    wp_idx     = 0
-    lat, lng   = waypoints[0]
-    battery    = 100.0
-    start_time = time.time()
-    detection_count  = 0
-    last_status_push = 0.0
+    waypoints       = PATROL.get(UAV_ID, DEFAULT_PATROL)
+    wp_idx          = 0
+    lat, lng        = waypoints[0]
+    battery         = 100.0
+    mode            = "patrol"   # patrol | returning | charging
+    detection_count = 0
+    last_status     = 0.0
+    last_tick       = time.time()
 
-    print(f"[RUN] UAV={UAV_ID} | {len(waypoints)}-waypoint patrol | Ctrl-C to stop\n")
+    print(f"[RUN] UAV={UAV_ID} | Base=({BASE_LAT},{BASE_LNG}) | Ctrl-C to stop\n")
 
     while True:
-        # ── Move toward current waypoint ─────────────────────────────────
-        t_lat, t_lng = waypoints[wp_idx]
-        lat, lng, reached = move_toward(lat, lng, t_lat, t_lng, PATROL_SPEED)
-        if reached:
-            wp_idx = (wp_idx + 1) % len(waypoints)
+        now = time.time()
+        dt  = now - last_tick
+        last_tick = now
 
-        # ── Battery drains 1% per 3 minutes of flight ────────────────────
-        battery = max(0.0, 100.0 - (time.time() - start_time) / 180.0)
+        # ── Battery ──────────────────────────────────────────────────────
+        if mode == "charging":
+            battery = min(100.0, battery + CHARGE_RATE * dt)
+            if battery >= 100.0:
+                battery = 100.0
+                mode    = "patrol"
+                print(f"[INFO] {UAV_ID} fully charged — resuming patrol")
+        else:
+            battery = max(0.0, battery - DRAIN_RATE * dt)
+            if battery <= 20.0 and mode == "patrol":
+                mode = "returning"
+                print(f"[WARN] {UAV_ID} battery {battery:.1f}% — returning to base")
 
-        # ── Generate detections ───────────────────────────────────────────
-        if args.simulate:
+        # ── Movement ─────────────────────────────────────────────────────
+        if mode == "returning":
+            lat, lng, reached = move_toward(lat, lng, BASE_LAT, BASE_LNG, RETURN_SPEED)
+            if reached:
+                lat, lng = BASE_LAT, BASE_LNG
+                mode     = "charging"
+                print(f"[INFO] {UAV_ID} docked at base — charging...")
+
+        elif mode == "patrol":
+            t_lat, t_lng      = waypoints[wp_idx]
+            lat, lng, reached = move_toward(lat, lng, t_lat, t_lng, PATROL_SPEED)
+            if reached:
+                wp_idx = (wp_idx + 1) % len(waypoints)
+
+        # ── Detections (patrol only) ──────────────────────────────────────
+        if mode == "patrol" and args.simulate:
             event = check_hotspots(lat, lng)
             if event:
                 pushed = push_event(supabase, event)
                 detection_count += 1
                 print(f"[{'PUSHED' if pushed else 'BUFFERED'}] "
-                      f"uav={UAV_ID} cls={event['class']:5s} "
-                      f"conf={event['confidence']:.3f} "
-                      f"lat={event['lat']:.5f} lng={event['lng']:.5f}")
-        else:
+                      f"uav={UAV_ID} mode={mode} cls={event['class']:5s} "
+                      f"conf={event['confidence']:.3f} bat={battery:.1f}%")
+
+        elif not args.simulate:
             import cv2
             ret, frame = cap.read()
             if not ret:
@@ -261,7 +273,6 @@ def main():
             results = model(frame, conf=args.conf, verbose=False)[0]
             for box in results.boxes:
                 cls_id = int(box.cls[0])
-                conf   = float(box.conf[0])
                 event  = {
                     "id":         str(uuid.uuid4()),
                     "uav_id":     UAV_ID,
@@ -269,22 +280,16 @@ def main():
                     "lat":        round(lat, 6),
                     "lng":        round(lng, 6),
                     "class":      CLASS_NAMES.get(cls_id, "unknown"),
-                    "confidence": round(conf, 3),
+                    "confidence": round(float(box.conf[0]), 3),
                     "frame_id":   int(time.time()),
                 }
                 push_event(supabase, event)
                 detection_count += 1
-            if args.show:
-                import cv2 as _cv2
-                _cv2.imshow("Fire Detection", frame)
-                if _cv2.waitKey(1) & 0xFF == ord("q"):
-                    break
 
-        # ── Push UAV status ───────────────────────────────────────────────
-        now = time.time()
-        if now - last_status_push >= STATUS_INTERVAL:
-            update_uav_status(supabase, lat, lng, battery, detection_count)
-            last_status_push = now
+        # ── Status push ───────────────────────────────────────────────────
+        if now - last_status >= STATUS_INTERVAL:
+            push_status(supabase, lat, lng, battery, detection_count, mode)
+            last_status = now
 
         time.sleep(0.033)
 
