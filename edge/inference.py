@@ -43,6 +43,13 @@ HOTSPOTS = [
     (35.7150, 10.4680, 0.55),   # Msaken olive grove — early smoke
 ]
 
+# ── False alarm sources — civilian smoke, never becomes fire ──────────────────
+# Each entry: (lat, lng, label)
+FALSE_ALARM_SOURCES = [
+    (35.7420, 10.5680, "industrial chimney"),   # Msaken industrial zone
+    (35.7600, 10.5300, "agricultural burning"), # Farm stubble burning
+]
+
 # ── Patrol waypoints per UAV (cycles indefinitely) ───────────────────────────
 PATROL = {
     "UAV-01": [
@@ -87,30 +94,24 @@ def move_toward(lat, lng, target_lat, target_lng, speed):
 
 def check_hotspots(lat, lng) -> dict | None:
     """
-    Return a detection event if the UAV is near a hotspot, else None.
-    - Within 0.04° (~4 km): might detect smoke
-    - Within 0.015° (~1.5 km): might detect fire
-    Confidence scales with proximity and hotspot intensity.
+    Return a detection event if the UAV is near a hotspot or false alarm source.
+    Hotspots: smoke far, fire close, confidence scales with proximity.
+    False alarm sources: smoke only, lower confidence, infrequent.
     """
+    # Check real fire hotspots
     for h_lat, h_lng, intensity in HOTSPOTS:
         dist = geo_dist(lat, lng, h_lat, h_lng)
         if dist > 0.05:
             continue
-
-        # Probability of triggering a detection this step
         p = intensity * max(0, (0.05 - dist) / 0.05) * 0.25
         if random.random() > p:
             continue
-
-        # Class and confidence based on distance
         if dist < 0.015:
             cls  = "fire"
             conf = round(min(0.99, 0.75 + intensity * 0.24 - dist * 5), 3)
         else:
             cls  = "smoke"
             conf = round(min(0.90, 0.50 + intensity * 0.30 - dist * 3), 3)
-
-        # Jitter the reported position slightly around the hotspot
         return {
             "id":         str(uuid.uuid4()),
             "uav_id":     UAV_ID,
@@ -121,6 +122,27 @@ def check_hotspots(lat, lng) -> dict | None:
             "confidence": conf,
             "frame_id":   int(time.time()),
         }
+
+    # Check false alarm sources (civilian smoke — never fire)
+    for f_lat, f_lng, label in FALSE_ALARM_SOURCES:
+        dist = geo_dist(lat, lng, f_lat, f_lng)
+        if dist > 0.04:
+            continue
+        if random.random() > 0.06:   # infrequent — these are sporadic
+            continue
+        conf = round(random.uniform(0.45, 0.65), 3)  # lower confidence
+        print(f"[FALSE ALARM] {label} — smoke conf={conf:.3f}")
+        return {
+            "id":         str(uuid.uuid4()),
+            "uav_id":     UAV_ID,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "lat":        round(f_lat + random.uniform(-0.003, 0.003), 6),
+            "lng":        round(f_lng + random.uniform(-0.003, 0.003), 6),
+            "class":      "smoke",
+            "confidence": conf,
+            "frame_id":   int(time.time()),
+        }
+
     return None
 
 

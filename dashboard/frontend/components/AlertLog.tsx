@@ -4,17 +4,19 @@ import type { DetectionEvent } from "@/lib/types";
 import { Flame, Wind } from "lucide-react";
 
 interface Props {
-  events: DetectionEvent[];
+  events:      DetectionEvent[];
+  selectedUav: string | null;
 }
 
-export default function AlertLog({ events }: Props) {
+export default function AlertLog({ events, selectedUav }: Props) {
+  const visible = selectedUav ? events.filter((e) => e.uav_id === selectedUav) : events;
   return (
     <div className="p-3">
       <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
         Alert Log
       </h2>
       <div className="space-y-1.5">
-        {events.map((event) => (
+        {visible.map((event) => (
           <div
             key={event.id}
             className={`rounded-lg p-2.5 text-xs border ${
@@ -51,7 +53,7 @@ export default function AlertLog({ events }: Props) {
             </div>
           </div>
         ))}
-        {events.length === 0 && (
+        {visible.length === 0 && (
           <p className="text-slate-600 text-xs text-center py-4">
             No detections yet
           </p>

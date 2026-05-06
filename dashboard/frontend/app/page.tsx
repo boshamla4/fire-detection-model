@@ -26,6 +26,7 @@ export default function DashboardPage() {
   const [uavStatuses, setUavStatuses] = useState<UAVStatus[]>([]);
   const [connected, setConnected] = useState(false);
   const [timeRange, setTimeRange] = useState<TimeRange>("24h");
+  const [selectedUav, setSelectedUav] = useState<string | null>(null);
 
   const addEvent = useCallback((event: DetectionEvent) => {
     setAllEvents((prev) => [event, ...prev].slice(0, MAX_EVENTS));
@@ -142,7 +143,7 @@ export default function DashboardPage() {
       <div className="flex flex-1 overflow-hidden">
         {/* Map */}
         <div className="flex-1 relative">
-          <FireMap events={events} uavStatuses={uavStatuses} />
+          <FireMap events={events} uavStatuses={uavStatuses} selectedUav={selectedUav} />
 
           {/* Floating stats — left-16 clears the Leaflet zoom buttons */}
           <div className="absolute top-4 left-16 z-[1000] flex gap-2">
@@ -155,13 +156,13 @@ export default function DashboardPage() {
         {/* Right sidebar */}
         <aside className="w-80 flex flex-col border-l border-slate-700 overflow-hidden">
           <div className="p-3 border-b border-slate-700 shrink-0">
-            <UAVStatusPanel statuses={uavStatuses} />
+            <UAVStatusPanel statuses={uavStatuses} selectedUav={selectedUav} onSelect={setSelectedUav} />
           </div>
           <div className="p-3 border-b border-slate-700 shrink-0">
             <StatsPanel events={events} />
           </div>
           <div className="flex-1 overflow-y-auto">
-            <AlertLog events={events} />
+            <AlertLog events={events} selectedUav={selectedUav} />
           </div>
         </aside>
       </div>

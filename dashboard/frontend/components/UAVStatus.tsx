@@ -5,46 +5,65 @@ import { Battery, Wifi, WifiOff, Radio } from "lucide-react";
 import clsx from "clsx";
 
 interface Props {
-  statuses: UAVStatus[];
+  statuses:    UAVStatus[];
+  selectedUav: string | null;
+  onSelect:    (id: string | null) => void;
 }
 
-export default function UAVStatusPanel({ statuses }: Props) {
+export default function UAVStatusPanel({ statuses, selectedUav, onSelect }: Props) {
   return (
     <div>
-      <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">
-        UAV Fleet
-      </h2>
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+          UAV Fleet
+        </h2>
+        {selectedUav && (
+          <button
+            onClick={() => onSelect(null)}
+            className="text-xs text-slate-500 hover:text-slate-300 underline"
+          >
+            Show all
+          </button>
+        )}
+      </div>
+
       {statuses.length === 0 && (
         <p className="text-slate-500 text-xs">No UAVs active</p>
       )}
+
       <div className="space-y-2">
-        {statuses.map((uav) => (
-          <div
-            key={uav.uav_id}
-            className="bg-slate-800 rounded-lg p-3 flex items-center justify-between"
-          >
-            <div>
-              <p className="text-sm font-medium">{uav.uav_id}</p>
-              <p className="text-xs text-slate-400">
-                {uav.detection_count} detections
-              </p>
-            </div>
-            <div className="flex items-center gap-3">
-              <ConnectivityIcon status={uav.connectivity} />
-              <BatteryIndicator pct={uav.battery_pct} />
-            </div>
-          </div>
-        ))}
+        {statuses.map((uav) => {
+          const isSelected = selectedUav === uav.uav_id;
+          return (
+            <button
+              key={uav.uav_id}
+              onClick={() => onSelect(isSelected ? null : uav.uav_id)}
+              className={clsx(
+                "w-full text-left rounded-lg p-3 flex items-center justify-between transition-colors",
+                isSelected
+                  ? "bg-blue-900/60 ring-1 ring-blue-500"
+                  : "bg-slate-800 hover:bg-slate-700"
+              )}
+            >
+              <div>
+                <p className="text-sm font-medium">{uav.uav_id}</p>
+                <p className="text-xs text-slate-400">{uav.detection_count} detections</p>
+              </div>
+              <div className="flex items-center gap-3">
+                <ConnectivityIcon status={uav.connectivity} />
+                <BatteryIndicator pct={uav.battery_pct} />
+              </div>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
 }
 
 function ConnectivityIcon({ status }: { status: UAVStatus["connectivity"] }) {
-  if (status === "connected")
-    return <Wifi size={16} className="text-green-400" />;
-  if (status === "lora")
-    return <Radio size={16} className="text-yellow-400" />;
+  if (status === "connected") return <Wifi size={16} className="text-green-400" />;
+  if (status === "lora")      return <Radio size={16} className="text-yellow-400" />;
   return <WifiOff size={16} className="text-red-400" />;
 }
 
