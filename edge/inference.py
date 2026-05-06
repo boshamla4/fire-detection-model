@@ -47,7 +47,8 @@ def parse_args():
     p.add_argument("--weights", default=None, help="Model weights (.pt or .onnx)")
     p.add_argument("--source", default="0", help="Video file path or webcam index")
     p.add_argument("--simulate", action="store_true",
-                   help="Generate synthetic detections (no model needed)")
+                   help="Generate synthetic detections (no model or video needed)")
+    p.add_argument("--uav-id", default=None, help="Override UAV_ID from .env")
     p.add_argument("--conf", type=float, default=CONF_THRESHOLD)
     p.add_argument("--show", action="store_true", help="Display video with detections")
     return p.parse_args()
@@ -116,6 +117,11 @@ def simulate_detection() -> dict | None:
 def main():
     args = parse_args()
 
+    # Allow CLI override of UAV_ID for multi-UAV simulation
+    global UAV_ID
+    if args.uav_id:
+        UAV_ID = args.uav_id
+
     supabase = connect_supabase()
     if supabase:
         print(f"[OK]   Connected to Supabase")
@@ -123,19 +129,22 @@ def main():
         print(f"[WARN] Running offline — events buffered locally")
 
     model = None
-    if not args.simulate:
+    cap = None
+
+    if args.simulate:
+        print(f"[RUN]  Simulate mode — no video or model needed")
+        print(f"[RUN]  UAV ID: {UAV_ID} | Ctrl-C to stop\n")
+    else:
         assert args.weights, "Provide --weights or use --simulate"
         from ultralytics import YOLO
         model = YOLO(args.weights)
         print(f"[OK]   Model loaded: {args.weights}")
-
-    source = int(args.source) if args.source.isdigit() else args.source
-    cap = cv2.VideoCapture(source)
-    if not cap.isOpened():
-        raise RuntimeError(f"Cannot open video source: {source}")
-
-    print(f"[OK]   Video source opened: {source}")
-    print(f"[RUN]  UAV ID: {UAV_ID} | Press Q to quit\n")
+        source = int(args.source) if args.source.isdigit() else args.source
+        cap = cv2.VideoCapture(source)
+        if not cap.isOpened():
+            raise RuntimeError(f"Cannot open video source: {source}")
+        print(f"[OK]   Video source opened: {source}")
+        print(f"[RUN]  UAV ID: {UAV_ID} | Press Q to quit\n")
 
     frame_id = 0
     detection_count = 0
@@ -143,12 +152,6 @@ def main():
     current_lat, current_lng = SIM_LAT, SIM_LNG
 
     while True:
-        ret, frame = cap.read()
-        if not ret:
-            print("[INFO] Video ended, looping...")
-            cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-            continue
-
         frame_id += 1
 
         # Drift GPS position slightly to simulate UAV movement
@@ -156,13 +159,19 @@ def main():
         current_lng += random.uniform(-0.0001, 0.0001)
 
         events = []
-        annotated = frame.copy()
 
         if args.simulate:
             det = simulate_detection()
             if det:
                 events.append(det)
         else:
+            ret, frame = cap.read()
+            if not ret:
+                print("[INFO] Video ended, looping...")
+                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                continue
+
+            annotated = frame.copy()
             results = model(frame, conf=args.conf, verbose=False)[0]
             for box in results.boxes:
                 cls_id = int(box.cls[0])
@@ -183,6 +192,11 @@ def main():
                 cv2.putText(annotated, f"{CLASS_NAMES[cls_id]} {conf:.2f}",
                             (x1, y1 - 8), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
 
+            if args.show:
+                cv2.imshow("Fire Detection — Edge Node", annotated)
+                if cv2.waitKey(1) & 0xFF == ord("q"):
+                    break
+
         for event in events:
             pushed = push_event(supabase, event)
             detection_count += 1
@@ -196,14 +210,10 @@ def main():
             update_uav_status(supabase, current_lat, current_lng, detection_count)
             last_status_push = now
 
-        if args.show:
-            cv2.imshow("Fire Detection — Edge Node", annotated)
-            if cv2.waitKey(1) & 0xFF == ord("q"):
-                break
-
         time.sleep(0.033)  # ~30 FPS cap
 
-    cap.release()
+    if cap:
+        cap.release()
     if args.show:
         cv2.destroyAllWindows()
 
