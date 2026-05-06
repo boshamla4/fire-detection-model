@@ -90,7 +90,7 @@ Add `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY` to Vercel env
 
 ## Live Demo
 
-Dashboard: [TBD — Vercel deployment URL]
+Dashboard: [https://fire-detection-model.vercel.app](https://fire-detection-model.vercel.app)
 
 ## Author
 
