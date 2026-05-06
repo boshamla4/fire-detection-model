@@ -54,12 +54,12 @@ function heatOpacity(createdAt: string, confidence: number): number {
 }
 
 export default function FireMap({ events, uavStatuses }: Props) {
-  const center: [number, number] = [36.8065, 9.5];
+  const center: [number, number] = [35.7303, 10.5621]; // Msaken, Sousse
 
   return (
     <MapContainer
       center={center}
-      zoom={7}
+      zoom={12}
       style={{ height: "100%", width: "100%", background: "#0f172a" }}
     >
       <TileLayer

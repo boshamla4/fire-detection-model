@@ -33,8 +33,8 @@ load_dotenv()
 SUPABASE_URL = os.environ["SUPABASE_URL"]
 SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 UAV_ID = os.environ.get("UAV_ID", "UAV-01")
-SIM_LAT = float(os.environ.get("SIM_LAT", "36.8065"))
-SIM_LNG = float(os.environ.get("SIM_LNG", "10.1815"))
+SIM_LAT = float(os.environ.get("SIM_LAT", "35.7303"))   # Msaken, Sousse
+SIM_LNG = float(os.environ.get("SIM_LNG", "10.5621"))
 
 CLASS_NAMES = {0: "fire", 1: "smoke"}
 STATUS_INTERVAL = 5.0    # seconds between UAV status updates
@@ -98,15 +98,15 @@ def update_uav_status(client: Client | None, lat: float, lng: float, detection_c
         pass
 
 
-def simulate_detection() -> dict | None:
-    if random.random() < 0.3:
+def simulate_detection(current_lat: float, current_lng: float) -> dict | None:
+    if random.random() < 0.02:   # ~1 detection every 1.5 s per UAV
         cls = random.choice(["fire", "smoke"])
         return {
             "id": str(uuid.uuid4()),
             "uav_id": UAV_ID,
             "created_at": datetime.now(timezone.utc).isoformat(),
-            "lat": SIM_LAT + random.uniform(-0.01, 0.01),
-            "lng": SIM_LNG + random.uniform(-0.01, 0.01),
+            "lat": round(current_lat + random.uniform(-0.03, 0.03), 6),
+            "lng": round(current_lng + random.uniform(-0.03, 0.03), 6),
             "class": cls,
             "confidence": round(random.uniform(0.60, 0.98), 3),
             "frame_id": int(time.time()),
@@ -154,14 +154,14 @@ def main():
     while True:
         frame_id += 1
 
-        # Drift GPS position slightly to simulate UAV movement
-        current_lat += random.uniform(-0.0001, 0.0001)
-        current_lng += random.uniform(-0.0001, 0.0001)
+        # Drift GPS position to simulate UAV patrol movement
+        current_lat += random.uniform(-0.0008, 0.0008)
+        current_lng += random.uniform(-0.0008, 0.0008)
 
         events = []
 
         if args.simulate:
-            det = simulate_detection()
+            det = simulate_detection(current_lat, current_lng)
             if det:
                 events.append(det)
         else:
